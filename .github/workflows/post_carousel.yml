@@ -65,6 +65,7 @@ jobs:
         env:
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: python scripts/generate_and_host_carousel.py
 
       - name: Objavi carousel na Instagram
