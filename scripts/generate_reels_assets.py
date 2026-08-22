@@ -3,14 +3,17 @@
 generate_reels_assets.py
 ---------------------------
 1. Bira nasumičnu "priču" iz content/stories.json (isti narativ kao Carousel).
-2. Za SVAKI slajd generiše sliku (1080x1920, vertikalni format za Reels) preko
-   Pollinations.ai i ispisuje tekst tog slajda preko slike (Pillow), BEZ emoji.
-3. Čuva slike LOKALNO u output/reels_frames/ (potrebne su lokalno za ffmpeg).
-4. Upisuje manifest (redosled slajdova, caption) u output/reels_manifest.json
-   za build_reels_video.py.
+2. Za SVAKI slajd traži PRAVI kratak video klip preko Pexels API-ja
+   (besplatno) - biramo scene gde se lice NE vidi jasno (siluete, atmosfera
+   grada/bara/sobe) da izgleda autentično i da izbegnemo pravni rizik.
+3. Preuzima svaki klip LOKALNO u output/reels_clips_raw/ (potrebni su
+   lokalno za ffmpeg u sledećem koraku).
+4. Za svaki slajd generiše PROVIDAN PNG (1080x1920) sa tekstom tog slajda
+   (Pillow), BEZ emoji, koji će build_reels_video.py preklopiti preko videa.
+5. Upisuje manifest (klip + overlay + trajanje po slajdu, caption) u
+   output/reels_manifest.json za build_reels_video.py.
 """
 
-import io
 import json
 import os
 import random
@@ -22,21 +25,30 @@ import urllib.request
 from PIL import Image, ImageDraw, ImageFont
 
 STORIES_FILE = "content/stories.json"
-FRAMES_DIR = "output/reels_frames"
+CLIPS_DIR = "output/reels_clips_raw"
+OVERLAYS_DIR = "output/reels_overlays"
 MANIFEST_FILE = "output/reels_manifest.json"
 MAX_RETRIES = 5
 RETRY_DELAYS = [5, 10, 20, 40]
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+WIDTH = 1080
+HEIGHT = 1920
+SLIDE_DURATION = 2.5
+LAST_SLIDE_DURATION = 3.5
+MIN_CLIP_DURATION = 3
+PEXELS_VIDEO_SEARCH_URL = "https://api.pexels.com/videos/search"
 
-SCENE_PROMPTS = [
-    "candid phone photo of a Serbian couple about to kiss, Slavic Balkan features, warm golden light, natural skin texture, amateur photography, authentic, not posed",
-    "candid photo of a Serbian couple dancing close together at a night club, Slavic features, colorful lights, amateur phone photo style, natural, realistic",
-    "candid phone photo close-up of a beautiful Serbian woman with a flirty smile, Slavic features, warm candlelight, natural makeup, authentic, realistic skin",
-    "candid photo of a Serbian couple laughing intimately at a rooftop bar at night, Balkan features, city lights, amateur photography, natural, imperfect",
-    "candid phone photo of Serbian couple holding hands on a table, candlelight, Slavic features, natural skin texture, authentic, not posed",
-    "candid photo of an attractive Serbian couple walking closely on a vibrant night street, Slavic Balkan features, neon lights, amateur phone photo style",
-    "candid phone photo of two Serbian friends sharing a drink, eye contact, Slavic features, warm bar lighting, amateur photography, natural, authentic",
-    "candid photo of a Serbian couple embracing at sunset on a rooftop, Slavic Balkan features, warm golden hour light, amateur phone photo style, realistic",
+# Upiti biraju scene gde se lice NE vidi jasno (siluete, atmosfera grada/
+# bara/sobe) - izgleda autentično i izbegava pravni rizik.
+SCENE_VIDEO_QUERIES = [
+    "city night lights traffic",
+    "candle flame close up night",
+    "couple silhouette walking night",
+    "bar nightlife lights ambience",
+    "hands touching table candlelight",
+    "nightclub dancing lights silhouette",
+    "city window night view room",
+    "couple silhouette sunset romantic",
 ]
 
 
@@ -44,12 +56,15 @@ def log(msg):
     print(f"[generate_reels_assets] {msg}", flush=True)
 
 
-def http_get_bytes_with_retry(url):
+def http_get_bytes_with_retry(url, headers=None, timeout=120):
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "srpskomuvanje-bot/1.0"})
-            with urllib.request.urlopen(req, timeout=60) as response:
+            req_headers = {"User-Agent": "srpskomuvanje-bot/1.0"}
+            if headers:
+                req_headers.update(headers)
+            req = urllib.request.Request(url, headers=req_headers)
+            with urllib.request.urlopen(req, timeout=timeout) as response:
                 return response.read()
         except urllib.error.HTTPError as e:
             if 400 <= e.code < 500:
@@ -69,41 +84,80 @@ def http_get_bytes_with_retry(url):
     raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
 
 
+def http_get_json_with_retry(url, headers=None):
+    raw = http_get_bytes_with_retry(url, headers=headers, timeout=30)
+    return json.loads(raw.decode("utf-8"))
+
+
 def pick_story():
     with open(STORIES_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
     return random.choice(data["stories"])
 
 
-def generate_base_image(seed_offset):
-    prompt = random.choice(SCENE_PROMPTS)
-    seed = random.randint(1, 999999) + seed_offset
-    encoded_prompt = urllib.parse.quote(prompt)
+def pick_video_file(video_obj):
+    candidates = [
+        vf for vf in video_obj.get("video_files", [])
+        if vf.get("file_type") == "video/mp4" and vf.get("width")
+    ]
+    if not candidates:
+        return None
+    # Biramo umerenu rezoluciju (brže preuzimanje, dovoljno kvalitetno)
+    candidates.sort(key=lambda vf: abs(vf["width"] - 720))
+    return candidates[0]
+
+
+def pick_video_url(api_key):
+    query = random.choice(SCENE_VIDEO_QUERIES)
+    page = random.randint(1, 3)
+    encoded_query = urllib.parse.quote(query)
     url = (
-        f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-        f"?width=1080&height=1920&seed={seed}&nologo=true&model=flux"
+        f"{PEXELS_VIDEO_SEARCH_URL}?query={encoded_query}"
+        f"&per_page=15&page={page}&orientation=portrait"
     )
-    log(f"Generišem sliku: {prompt} (seed={seed})")
-    return http_get_bytes_with_retry(url)
+    log(f"Tražim video klip na Pexels-u: '{query}' (strana {page})")
+    data = http_get_json_with_retry(url, headers={"Authorization": api_key})
+
+    videos = data.get("videos", [])
+    good_videos = [v for v in videos if v.get("duration", 0) >= MIN_CLIP_DURATION]
+    pool = good_videos if good_videos else videos
+
+    random.shuffle(pool)
+    for video in pool:
+        video_file = pick_video_file(video)
+        if video_file:
+            return video_file["link"]
+
+    log("Nema rezultata za taj upit, probam rezervni upit...")
+    fallback_url = (
+        f"{PEXELS_VIDEO_SEARCH_URL}?query=city+night+lights"
+        f"&per_page=15&page=1&orientation=portrait"
+    )
+    data = http_get_json_with_retry(fallback_url, headers={"Authorization": api_key})
+    for video in data.get("videos", []):
+        video_file = pick_video_file(video)
+        if video_file:
+            return video_file["link"]
+
+    raise RuntimeError("Pexels nije vratio nijedan upotrebljiv video klip.")
 
 
-def add_slide_text(image_bytes, text):
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    width, height = img.size
+def render_overlay(text):
+    img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img, "RGBA")
 
     try:
-        font_size = int(width * 0.08)
+        font_size = int(WIDTH * 0.075)
         font = ImageFont.truetype(FONT_PATH, font_size)
     except OSError:
         log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
         font = ImageFont.load_default()
         font_size = 20
 
-    draw = ImageDraw.Draw(img)
     words = text.split()
     lines = []
     current_line = ""
-    max_width = int(width * 0.85)
+    max_width = int(WIDTH * 0.85)
     for word in words:
         test_line = (current_line + " " + word).strip()
         bbox = draw.textbbox((0, 0), test_line, font=font)
@@ -119,50 +173,66 @@ def add_slide_text(image_bytes, text):
     line_height = int(font_size * 1.3)
     total_text_height = line_height * len(lines)
 
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 65))
-    img = Image.alpha_composite(img.convert("RGBA"), overlay)
-    draw = ImageDraw.Draw(img, "RGBA")
+    band_top = HEIGHT - total_text_height - int(HEIGHT * 0.14)
+    draw.rectangle([(0, band_top), (WIDTH, HEIGHT)], fill=(0, 0, 0, 130))
 
-    y = (height - total_text_height) / 2
+    y = HEIGHT - total_text_height - int(HEIGHT * 0.09)
     for line in lines:
         bbox = draw.textbbox((0, 0), line, font=font)
         line_width = bbox[2] - bbox[0]
-        x = (width - line_width) / 2
+        x = (WIDTH - line_width) / 2
         for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2)]:
             draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0, 255))
         draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
         y += line_height
 
-    img = img.convert("RGB")
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=92)
-    return buf.getvalue()
+    return img
 
 
 def main():
+    api_key = os.environ.get("PEXELS_API_KEY", "").strip()
+    if not api_key:
+        log("GREŠKA: nedostaje PEXELS_API_KEY.")
+        raise SystemExit(1)
+
     story = pick_story()
     log(f"Izabrana priča: {story['title']} ({len(story['slides'])} slajdova)")
 
-    os.makedirs(FRAMES_DIR, exist_ok=True)
-    frame_paths = []
+    os.makedirs(CLIPS_DIR, exist_ok=True)
+    os.makedirs(OVERLAYS_DIR, exist_ok=True)
+
+    slides = []
     for i, slide_text in enumerate(story["slides"]):
+        is_last = i == len(story["slides"]) - 1
+        duration = LAST_SLIDE_DURATION if is_last else SLIDE_DURATION
         log(f"Slajd {i + 1}/{len(story['slides'])}: {slide_text}")
-        base_image = generate_base_image(seed_offset=i * 1000)
-        final_image = add_slide_text(base_image, slide_text)
-        path = os.path.join(FRAMES_DIR, f"slide_{i:02d}.jpg")
-        with open(path, "wb") as f:
-            f.write(final_image)
-        frame_paths.append(path)
+
+        video_url = pick_video_url(api_key)
+        log(f"Preuzimam video klip: {video_url}")
+        clip_bytes = http_get_bytes_with_retry(video_url)
+        clip_path = os.path.join(CLIPS_DIR, f"clip_{i:02d}.mp4")
+        with open(clip_path, "wb") as f:
+            f.write(clip_bytes)
+
+        overlay_img = render_overlay(slide_text)
+        overlay_path = os.path.join(OVERLAYS_DIR, f"overlay_{i:02d}.png")
+        overlay_img.save(overlay_path, format="PNG")
+
+        slides.append({
+            "clip_path": clip_path,
+            "overlay_path": overlay_path,
+            "duration": duration,
+        })
 
     manifest = {
         "title": story["title"],
-        "frame_paths": frame_paths,
         "caption": story["caption"],
+        "slides": slides,
     }
     with open(MANIFEST_FILE, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-    log(f"Gotovo. {len(frame_paths)} frejmova spremno za video.")
+    log(f"Gotovo. {len(slides)} video klipova spremno za montažu.")
 
 
 if __name__ == "__main__":
