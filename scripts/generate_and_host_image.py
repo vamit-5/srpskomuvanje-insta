@@ -4,9 +4,12 @@ generate_and_host_image.py
 ----------------------------
 1. Bira nasumičan hook+caption iz banke tekstova (content/captions.json) za
    zadatu kategoriju.
-2. Generiše pozadinsku sliku preko Pollinations.ai (besplatno, bez ključa).
-3. Dodaje hook tekst preko slike (Pillow) - BEZ emoji (font ih ne podržava,
-   emoji idu samo u caption ispod objave).
+2. Traži PRAVU fotografiju preko Pexels API-ja (besplatno, sa API ključem) -
+   biramo isključivo scene gde se lice NE vidi jasno (siluete, pogled sa
+   leđa, atmosfera) da izgleda autentično i da izbegnemo pravni rizik
+   korišćenja tuđeg lika.
+3. Iseca sliku na tačan format (1080x1350) i dodaje hook tekst preko slike
+   (Pillow) - BEZ emoji (font ih ne podržava, emoji idu samo u caption).
 4. Otpremi finalnu sliku na Cloudinary (besplatan hosting) da dobije javni URL.
 5. Upisuje rezultat (image_url, caption, category) u output/post_content.json
    za sledeći korak (publish skriptu) da pročita.
@@ -33,25 +36,30 @@ OUTPUT_FILE = "output/post_content.json"
 MAX_RETRIES = 5
 RETRY_DELAYS = [5, 10, 20, 40]
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+TARGET_WIDTH = 1080
+TARGET_HEIGHT = 1350
+PEXELS_SEARCH_URL = "https://api.pexels.com/v1/search"
 
-IMAGE_PROMPT_POOLS = {
+# Upiti biraju scene gde se lice NE vidi jasno (siluete, pogled sa leđa,
+# atmosfera sobe/izlaska) - izgleda autentično i izbegava pravni rizik.
+PEXELS_QUERY_POOLS = {
     "cta": [
-        "candid phone photo of an attractive Serbian couple about to kiss, Slavic Balkan features, natural skin texture, warm golden light, amateur photography style, imperfect framing, authentic, not posed",
-        "candid photo of a beautiful Serbian woman smiling flirtatiously, Slavic features, natural makeup, warm evening light, amateur phone photo style, realistic skin, authentic",
-        "candid phone photo of a handsome Serbian man with a confident smile, Slavic Balkan features, casual outfit, warm ambient light, realistic, imperfect natural lighting",
-        "candid photo of an attractive Serbian couple walking closely on a lively night street, Balkan features, neon lights, amateur photography, natural, authentic",
+        "couple silhouette sunset holding hands",
+        "romantic couple close up night city lights",
+        "hotel room window night city view",
+        "couple dancing silhouette nightclub",
     ],
     "humor_citati": [
-        "candid phone photo of a Serbian couple dancing close together at a bar, Slavic features, natural expressions, warm ambient light, amateur photography, realistic",
-        "candid photo of two attractive Balkan friends laughing together at an outdoor bar table, natural light, amateur phone photo style, authentic, imperfect",
-        "candid phone photo close-up of Serbian couple holding hands on a table, candlelight, natural skin texture, authentic, not posed",
-        "candid photo of a Serbian couple embracing on a rooftop at sunset, Slavic features, warm golden hour light, amateur photography style, realistic",
+        "friends laughing silhouette bar night",
+        "couple laughing close up candlelight",
+        "rooftop bar couple silhouette sunset",
+        "two people clinking glasses night out",
     ],
     "relatable": [
-        "candid phone photo of a young Serbian woman smiling at her phone screen, natural room light, Slavic features, authentic, amateur photography, realistic skin",
-        "candid photo of a Serbian man checking his phone with a hopeful smile, warm light, Slavic Balkan features, amateur phone photo style, natural",
-        "candid phone photo of a young Serbian person getting ready in front of a mirror, excited expression, natural light, authentic, imperfect framing",
-        "candid photo of Serbian friends laughing together at a cafe table, Slavic features, warm afternoon light, amateur photography, natural, authentic",
+        "person texting phone bed dark room",
+        "woman smiling at phone screen dark room",
+        "getting ready mirror silhouette bedroom",
+        "friends laughing cafe table from behind",
     ],
 }
 
@@ -60,11 +68,14 @@ def log(msg):
     print(f"[generate_and_host_image] {msg}", flush=True)
 
 
-def http_get_bytes_with_retry(url):
+def http_get_bytes_with_retry(url, headers=None):
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "srpskomuvanje-bot/1.0"})
+            req_headers = {"User-Agent": "srpskomuvanje-bot/1.0"}
+            if headers:
+                req_headers.update(headers)
+            req = urllib.request.Request(url, headers=req_headers)
             with urllib.request.urlopen(req, timeout=60) as response:
                 return response.read()
         except urllib.error.HTTPError as e:
@@ -83,6 +94,11 @@ def http_get_bytes_with_retry(url):
             time.sleep(delay)
 
     raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
+
+
+def http_get_json_with_retry(url, headers=None):
+    raw = http_get_bytes_with_retry(url, headers=headers)
+    return json.loads(raw.decode("utf-8"))
 
 
 def http_post_with_retry(url, data_bytes, content_type):
@@ -122,21 +138,55 @@ def pick_caption_entry(category):
     return random.choice(entries)
 
 
-def generate_base_image(category):
-    prompt_pool = IMAGE_PROMPT_POOLS.get(category, IMAGE_PROMPT_POOLS["relatable"])
-    prompt = random.choice(prompt_pool)
-    seed = random.randint(1, 999999)
-    encoded_prompt = urllib.parse.quote(prompt)
+def pick_photo_url(category, api_key):
+    query_pool = PEXELS_QUERY_POOLS.get(category, PEXELS_QUERY_POOLS["relatable"])
+    query = random.choice(query_pool)
+    page = random.randint(1, 3)
+    encoded_query = urllib.parse.quote(query)
     url = (
-        f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-        f"?width=1080&height=1350&seed={seed}&nologo=true&model=flux"
+        f"{PEXELS_SEARCH_URL}?query={encoded_query}"
+        f"&per_page=15&page={page}&orientation=portrait"
     )
-    log(f"Generišem sliku: {prompt} (seed={seed})")
-    return http_get_bytes_with_retry(url)
+    log(f"Tražim fotografiju na Pexels-u: '{query}' (strana {page})")
+    data = http_get_json_with_retry(url, headers={"Authorization": api_key})
+
+    photos = [p for p in data.get("photos", []) if p.get("src", {}).get("large2x") or p.get("src", {}).get("original")]
+    if not photos:
+        log("Nema rezultata za taj upit, probam rezervni upit...")
+        fallback_url = (
+            f"{PEXELS_SEARCH_URL}?query=couple+silhouette+romantic"
+            f"&per_page=15&page=1&orientation=portrait"
+        )
+        data = http_get_json_with_retry(fallback_url, headers={"Authorization": api_key})
+        photos = [p for p in data.get("photos", []) if p.get("src", {}).get("large2x") or p.get("src", {}).get("original")]
+        if not photos:
+            raise RuntimeError("Pexels nije vratio nijednu upotrebljivu fotografiju.")
+
+    photo = random.choice(photos)
+    return photo["src"].get("large2x") or photo["src"]["original"]
+
+
+def crop_to_fill(img, target_w, target_h):
+    src_w, src_h = img.size
+    src_ratio = src_w / src_h
+    target_ratio = target_w / target_h
+
+    if src_ratio > target_ratio:
+        new_h = target_h
+        new_w = max(target_w, int(src_w * (target_h / src_h)))
+    else:
+        new_w = target_w
+        new_h = max(target_h, int(src_h * (target_w / src_w)))
+
+    img = img.resize((new_w, new_h), Image.LANCZOS)
+    left = (new_w - target_w) // 2
+    top = (new_h - target_h) // 2
+    return img.crop((left, top, left + target_w, top + target_h))
 
 
 def add_hook_text(image_bytes, hook_text):
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = crop_to_fill(img, TARGET_WIDTH, TARGET_HEIGHT)
     draw = ImageDraw.Draw(img, "RGBA")
     width, height = img.size
 
@@ -224,11 +274,18 @@ def main():
 
     category = sys.argv[1]
 
+    api_key = os.environ.get("PEXELS_API_KEY", "").strip()
+    if not api_key:
+        log("GREŠKA: nedostaje PEXELS_API_KEY.")
+        sys.exit(1)
+
     entry = pick_caption_entry(category)
     hook = entry["hook"]
     caption = entry["caption"]
 
-    base_image = generate_base_image(category)
+    photo_url = pick_photo_url(category, api_key)
+    log(f"Preuzimam fotografiju: {photo_url}")
+    base_image = http_get_bytes_with_retry(photo_url)
     final_image = add_hook_text(base_image, hook)
     image_url = upload_to_cloudinary(final_image)
 
