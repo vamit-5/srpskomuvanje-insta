@@ -1,0 +1,77 @@
+name: Post Feed Image
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # proverava svakog sata, ali objavljuje SAMO u ciljanim terminima
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instaliraj font (DejaVu, podržava č/ć/š/ž/đ)
+        run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core
+
+      - name: Instaliraj Pillow
+        run: pip install Pillow
+
+      - name: Proveri da li je ciljani termin za Feed (9, 12, 15, 18, 21h po srpskom vremenu)
+        id: time_check
+        run: |
+          python -c "
+          from zoneinfo import ZoneInfo
+          from datetime import datetime
+          import os
+          TARGET_HOURS = [9, 12, 15, 18, 21]
+          hour = datetime.now(ZoneInfo('Europe/Belgrade')).hour
+          ok = hour in TARGET_HOURS
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'ok={str(ok).lower()}\n')
+          print(f'Trenutni sat po srpskom vremenu: {hour}, ciljani termin: {ok}')
+          "
+
+      - name: Zauzmi katanac
+        id: lock
+        if: steps.time_check.outputs.ok == 'true'
+        run: python scripts/lock_utils.py acquire feed
+
+      - name: Proveri Instagram kvotu
+        id: quota
+        if: steps.lock.outputs.acquired == 'true'
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+        run: python scripts/check_quota.py
+
+      - name: Generiši sliku i tekst
+        if: steps.lock.outputs.acquired == 'true' && steps.quota.outputs.ok == 'true'
+        env:
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+        run: |
+          CATEGORIES=("cta" "humor_citati" "relatable")
+          RANDOM_CATEGORY=${CATEGORIES[$RANDOM % ${#CATEGORIES[@]}]}
+          echo "Izabrana kategorija: $RANDOM_CATEGORY"
+          python scripts/generate_and_host_image.py "$RANDOM_CATEGORY"
+
+      - name: Objavi na Instagram
+        if: steps.lock.outputs.acquired == 'true' && steps.quota.outputs.ok == 'true'
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+        run: python scripts/publish_feed.py
+
+      - name: Otključaj katanac
+        if: always() && steps.lock.outputs.acquired == 'true'
+        run: python scripts/lock_utils.py release feed
