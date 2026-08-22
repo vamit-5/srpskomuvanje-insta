@@ -1,0 +1,77 @@
+name: Post Reels
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instaliraj font i ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core ffmpeg
+
+      - name: Instaliraj Pillow
+        run: pip install Pillow
+
+      - name: Proveri da li je ciljani termin za Reels (14, 22h po srpskom vremenu)
+        id: time_check
+        run: |
+          python -c "
+          from zoneinfo import ZoneInfo
+          from datetime import datetime
+          import os
+          TARGET_HOURS = [14, 22]
+          hour = datetime.now(ZoneInfo('Europe/Belgrade')).hour
+          ok = hour in TARGET_HOURS
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'ok={str(ok).lower()}\n')
+          print(f'Trenutni sat po srpskom vremenu: {hour}, ciljani termin: {ok}')
+          "
+
+      - name: Zauzmi katanac
+        id: lock
+        if: steps.time_check.outputs.ok == 'true'
+        run: python scripts/lock_utils.py acquire reels
+
+      - name: Proveri Instagram kvotu
+        id: quota
+        if: steps.lock.outputs.acquired == 'true'
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+        run: python scripts/check_quota.py
+
+      - name: Generiši frejmove za Reels
+        if: steps.lock.outputs.acquired == 'true' && steps.quota.outputs.ok == 'true'
+        run: python scripts/generate_reels_assets.py
+
+      - name: Napravi video i otpremi na Cloudinary
+        if: steps.lock.outputs.acquired == 'true' && steps.quota.outputs.ok == 'true'
+        env:
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+        run: python scripts/build_reels_video.py
+
+      - name: Objavi Reels na Instagram
+        if: steps.lock.outputs.acquired == 'true' && steps.quota.outputs.ok == 'true'
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+        run: python scripts/publish_reels.py
+
+      - name: Otključaj katanac
+        if: always() && steps.lock.outputs.acquired == 'true'
+        run: python scripts/lock_utils.py release reels
