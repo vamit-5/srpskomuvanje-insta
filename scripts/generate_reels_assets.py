@@ -29,14 +29,14 @@ RETRY_DELAYS = [5, 10, 20, 40]
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 SCENE_PROMPTS = [
-    "close up of two people about to kiss, warm golden light, intense eye contact, cinematic romance",
-    "couple dancing close together at a night club, colorful neon lights, energetic mood",
-    "flirty smile close-up portrait, warm candlelight, seductive mood, cinematic photography",
-    "couple laughing intimately at a rooftop bar at night, city lights background, romantic tension",
-    "close up of hands intertwined on a table, candlelight, romantic and sensual mood",
-    "attractive couple walking closely together on a vibrant night street, neon lights, cinematic",
-    "two people sharing a drink, eye contact, warm bar lighting, flirtatious mood",
-    "silhouette of couple embracing at sunset on a rooftop, warm golden hour light, romantic",
+    "candid phone photo of a Serbian couple about to kiss, Slavic Balkan features, warm golden light, natural skin texture, amateur photography, authentic, not posed",
+    "candid photo of a Serbian couple dancing close together at a night club, Slavic features, colorful lights, amateur phone photo style, natural, realistic",
+    "candid phone photo close-up of a beautiful Serbian woman with a flirty smile, Slavic features, warm candlelight, natural makeup, authentic, realistic skin",
+    "candid photo of a Serbian couple laughing intimately at a rooftop bar at night, Balkan features, city lights, amateur photography, natural, imperfect",
+    "candid phone photo of Serbian couple holding hands on a table, candlelight, Slavic features, natural skin texture, authentic, not posed",
+    "candid photo of an attractive Serbian couple walking closely on a vibrant night street, Slavic Balkan features, neon lights, amateur phone photo style",
+    "candid phone photo of two Serbian friends sharing a drink, eye contact, Slavic features, warm bar lighting, amateur photography, natural, authentic",
+    "candid photo of a Serbian couple embracing at sunset on a rooftop, Slavic Balkan features, warm golden hour light, amateur phone photo style, realistic",
 ]
 
 
