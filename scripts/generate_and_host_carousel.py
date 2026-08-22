@@ -4,11 +4,13 @@ generate_and_host_carousel.py
 --------------------------------
 1. Bira nasumičnu "priču" (niz od 6-7 slajdova koji grade narativ) iz
    content/stories.json.
-2. Za SVAKI slajd generiše pozadinsku sliku preko Pollinations.ai i
-   ispisuje tekst tog slajda preko slike (Pillow) - tekst po sredini,
-   narativni stil, BEZ emoji (font ih ne podržava).
-3. Otpremi svaku sliku na Cloudinary.
-4. Upisuje listu image_url-ova i glavni caption u output/carousel_content.json
+2. Za SVAKI slajd traži PRAVU fotografiju preko Pexels API-ja (besplatno) -
+   biramo scene gde se lice NE vidi jasno (siluete, atmosfera, pogled sa
+   leđa) da izgleda autentično i da izbegnemo pravni rizik.
+3. Iseca sliku na tačan format (1080x1350) i ispisuje tekst tog slajda
+   preko slike (Pillow) - tekst po sredini, narativni stil, BEZ emoji.
+4. Otpremi svaku sliku na Cloudinary.
+5. Upisuje listu image_url-ova i glavni caption u output/carousel_content.json
    za publish_carousel.py.
 """
 
@@ -29,16 +31,21 @@ OUTPUT_FILE = "output/carousel_content.json"
 MAX_RETRIES = 5
 RETRY_DELAYS = [5, 10, 20, 40]
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+TARGET_WIDTH = 1080
+TARGET_HEIGHT = 1350
+PEXELS_SEARCH_URL = "https://api.pexels.com/v1/search"
 
-SCENE_PROMPTS = [
-    "candid phone photo of a Serbian couple about to kiss, Slavic Balkan features, warm golden light, natural skin texture, amateur photography, authentic, not posed",
-    "candid photo of a Serbian couple dancing close together at a night club, Slavic features, colorful lights, amateur phone photo style, natural, realistic",
-    "candid phone photo close-up of a beautiful Serbian woman with a flirty smile, Slavic features, warm candlelight, natural makeup, authentic, realistic skin",
-    "candid photo of a Serbian couple laughing intimately at a rooftop bar at night, Balkan features, city lights, amateur photography, natural, imperfect",
-    "candid phone photo of Serbian couple holding hands on a table, candlelight, Slavic features, natural skin texture, authentic, not posed",
-    "candid photo of an attractive Serbian couple walking closely on a vibrant night street, Slavic Balkan features, neon lights, amateur phone photo style",
-    "candid phone photo of two Serbian friends sharing a drink, eye contact, Slavic features, warm bar lighting, amateur photography, natural, authentic",
-    "candid photo of a Serbian couple embracing at sunset on a rooftop, Slavic Balkan features, warm golden hour light, amateur phone photo style, realistic",
+# Upiti biraju scene gde se lice NE vidi jasno (siluete, atmosfera sobe/
+# izlaska) - izgleda autentično i izbegava pravni rizik.
+SCENE_QUERIES = [
+    "city street night lights empty",
+    "phone screen dark room scrolling hand",
+    "couple silhouette distance night street",
+    "candlelight bar close up hands",
+    "nightclub lights silhouette dancing",
+    "couple walking night city from behind",
+    "bedroom window city view night",
+    "two wine glasses table night date",
 ]
 
 
@@ -46,11 +53,14 @@ def log(msg):
     print(f"[generate_and_host_carousel] {msg}", flush=True)
 
 
-def http_get_bytes_with_retry(url):
+def http_get_bytes_with_retry(url, headers=None):
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "srpskomuvanje-bot/1.0"})
+            req_headers = {"User-Agent": "srpskomuvanje-bot/1.0"}
+            if headers:
+                req_headers.update(headers)
+            req = urllib.request.Request(url, headers=req_headers)
             with urllib.request.urlopen(req, timeout=60) as response:
                 return response.read()
         except urllib.error.HTTPError as e:
@@ -69,6 +79,11 @@ def http_get_bytes_with_retry(url):
             time.sleep(delay)
 
     raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
+
+
+def http_get_json_with_retry(url, headers=None):
+    raw = http_get_bytes_with_retry(url, headers=headers)
+    return json.loads(raw.decode("utf-8"))
 
 
 def http_post_with_retry(url, data_bytes, content_type):
@@ -105,20 +120,54 @@ def pick_story():
     return random.choice(data["stories"])
 
 
-def generate_base_image(seed_offset):
-    prompt = random.choice(SCENE_PROMPTS)
-    seed = random.randint(1, 999999) + seed_offset
-    encoded_prompt = urllib.parse.quote(prompt)
+def pick_photo_url(api_key):
+    query = random.choice(SCENE_QUERIES)
+    page = random.randint(1, 3)
+    encoded_query = urllib.parse.quote(query)
     url = (
-        f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-        f"?width=1080&height=1350&seed={seed}&nologo=true&model=flux"
+        f"{PEXELS_SEARCH_URL}?query={encoded_query}"
+        f"&per_page=15&page={page}&orientation=portrait"
     )
-    log(f"Generišem sliku: {prompt} (seed={seed})")
-    return http_get_bytes_with_retry(url)
+    log(f"Tražim fotografiju na Pexels-u: '{query}' (strana {page})")
+    data = http_get_json_with_retry(url, headers={"Authorization": api_key})
+
+    photos = [p for p in data.get("photos", []) if p.get("src", {}).get("large2x") or p.get("src", {}).get("original")]
+    if not photos:
+        log("Nema rezultata za taj upit, probam rezervni upit...")
+        fallback_url = (
+            f"{PEXELS_SEARCH_URL}?query=couple+silhouette+romantic"
+            f"&per_page=15&page=1&orientation=portrait"
+        )
+        data = http_get_json_with_retry(fallback_url, headers={"Authorization": api_key})
+        photos = [p for p in data.get("photos", []) if p.get("src", {}).get("large2x") or p.get("src", {}).get("original")]
+        if not photos:
+            raise RuntimeError("Pexels nije vratio nijednu upotrebljivu fotografiju.")
+
+    photo = random.choice(photos)
+    return photo["src"].get("large2x") or photo["src"]["original"]
+
+
+def crop_to_fill(img, target_w, target_h):
+    src_w, src_h = img.size
+    src_ratio = src_w / src_h
+    target_ratio = target_w / target_h
+
+    if src_ratio > target_ratio:
+        new_h = target_h
+        new_w = max(target_w, int(src_w * (target_h / src_h)))
+    else:
+        new_w = target_w
+        new_h = max(target_h, int(src_h * (target_w / src_w)))
+
+    img = img.resize((new_w, new_h), Image.LANCZOS)
+    left = (new_w - target_w) // 2
+    top = (new_h - target_h) // 2
+    return img.crop((left, top, left + target_w, top + target_h))
 
 
 def add_slide_text(image_bytes, text):
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = crop_to_fill(img, TARGET_WIDTH, TARGET_HEIGHT)
     width, height = img.size
 
     try:
@@ -201,13 +250,19 @@ def upload_to_cloudinary(image_bytes):
 
 
 def main():
+    api_key = os.environ.get("PEXELS_API_KEY", "").strip()
+    if not api_key:
+        log("GREŠKA: nedostaje PEXELS_API_KEY.")
+        raise SystemExit(1)
+
     story = pick_story()
     log(f"Izabrana priča: {story['title']} ({len(story['slides'])} slajdova)")
 
     image_urls = []
     for i, slide_text in enumerate(story["slides"]):
         log(f"Slajd {i + 1}/{len(story['slides'])}: {slide_text}")
-        base_image = generate_base_image(seed_offset=i * 1000)
+        photo_url = pick_photo_url(api_key)
+        base_image = http_get_bytes_with_retry(photo_url)
         final_image = add_slide_text(base_image, slide_text)
         url = upload_to_cloudinary(final_image)
         image_urls.append(url)
