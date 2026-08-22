@@ -60,11 +60,13 @@ jobs:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
         run: python scripts/check_quota.py
 
-      - name: Generiši frejmove za Reels
+      - name: Generiši video klipove za Reels
         if: steps.lock.outputs.acquired == 'true' && steps.quota.outputs.ok == 'true'
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: python scripts/generate_reels_assets.py
 
-      - name: Napravi video i otpremi na Cloudinary
+      - name: Napravi video (uz muziku) i otpremi na Cloudinary
         if: steps.lock.outputs.acquired == 'true' && steps.quota.outputs.ok == 'true'
         env:
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
