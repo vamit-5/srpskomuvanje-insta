@@ -1,0 +1,30 @@
+name: Refresh Instagram Token
+
+# Pokreće se automatski jednom dnevno i produžava dugotrajni Instagram token
+# za još 60 dana, bez ručne intervencije. Token traje 60 dana pa dnevno
+# osvežavanje ostavlja ogromnu sigurnosnu marginu.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # svaki dan u 03:00 UTC (05:00 po srpskom vremenu)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pokreni refresh skriptu
+        run: python scripts/refresh_token.py
