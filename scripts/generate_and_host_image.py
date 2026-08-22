@@ -36,22 +36,22 @@ FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 IMAGE_PROMPT_POOLS = {
     "cta": [
-        "close up of two people about to kiss, warm golden light, intense eye contact, cinematic romance",
-        "flirty smile close-up portrait, warm candlelight, seductive mood, cinematic photography",
-        "couple laughing intimately at a rooftop bar at night, city lights background, romantic tension",
-        "attractive couple walking closely together on a vibrant night street, neon lights, cinematic",
+        "candid phone photo of an attractive Serbian couple about to kiss, Slavic Balkan features, natural skin texture, warm golden light, amateur photography style, imperfect framing, authentic, not posed",
+        "candid photo of a beautiful Serbian woman smiling flirtatiously, Slavic features, natural makeup, warm evening light, amateur phone photo style, realistic skin, authentic",
+        "candid phone photo of a handsome Serbian man with a confident smile, Slavic Balkan features, casual outfit, warm ambient light, realistic, imperfect natural lighting",
+        "candid photo of an attractive Serbian couple walking closely on a lively night street, Balkan features, neon lights, amateur photography, natural, authentic",
     ],
     "humor_citati": [
-        "couple dancing close together at a night club, colorful neon lights, energetic mood",
-        "two people sharing a drink, eye contact, warm bar lighting, flirtatious mood",
-        "close up of hands intertwined on a table, candlelight, romantic and sensual mood",
-        "silhouette of couple embracing at sunset on a rooftop, warm golden hour light, romantic",
+        "candid phone photo of a Serbian couple dancing close together at a bar, Slavic features, natural expressions, warm ambient light, amateur photography, realistic",
+        "candid photo of two attractive Balkan friends laughing together at an outdoor bar table, natural light, amateur phone photo style, authentic, imperfect",
+        "candid phone photo close-up of Serbian couple holding hands on a table, candlelight, natural skin texture, authentic, not posed",
+        "candid photo of a Serbian couple embracing on a rooftop at sunset, Slavic features, warm golden hour light, amateur photography style, realistic",
     ],
     "relatable": [
-        "person smiling at phone screen with hopeful expression, warm room light, lifestyle photography",
-        "close up of phone glowing in the dark with a smiling reflection, moody warm light",
-        "young person getting ready in front of mirror, warm light, excited expression, lifestyle photo",
-        "couple laughing together at a cafe table, candid photography, warm afternoon light",
+        "candid phone photo of a young Serbian woman smiling at her phone screen, natural room light, Slavic features, authentic, amateur photography, realistic skin",
+        "candid photo of a Serbian man checking his phone with a hopeful smile, warm light, Slavic Balkan features, amateur phone photo style, natural",
+        "candid phone photo of a young Serbian person getting ready in front of a mirror, excited expression, natural light, authentic, imperfect framing",
+        "candid photo of Serbian friends laughing together at a cafe table, Slavic features, warm afternoon light, amateur photography, natural, authentic",
     ],
 }
 
