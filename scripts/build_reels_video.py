@@ -2,16 +2,23 @@
 """
 build_reels_video.py
 -----------------------
-Uzima frejmove (slike) iz output/reels_manifest.json i pravi kratak
-vertikalni Reels video (1080x1920):
-- Svaki slajd postaje klip sa blagim zoom-in efektom (~2s), poslednji ~3s.
-- Klipovi se nadovezuju (tvrdi rez, bez zvuka za sada).
+Uzima video klipove i tekst-overlay PNG-ove iz output/reels_manifest.json
+(koje je pripremio generate_reels_assets.py) i pravi kratak vertikalni
+Reels video (1080x1920):
+- Svaki klip se iseca/skalira na 1080x1920 i preko njega se preklapa
+  providan PNG sa tekstom tog slajda.
+- Klipovi se nadovezuju (tvrdi rez).
+- Preko celog videa se dodaje nasumično izabrana pesma iz assets/music/
+  (ako fajlovi postoje), sa blagim fade-out efektom na kraju.
 - Finalni video se otprema na Cloudinary da dobije video_url.
 - Upisuje output/reels_content.json {video_url, caption} za publish_reels.py.
 """
 
+import glob
 import json
 import os
+import random
+import shutil
 import subprocess
 import time
 import urllib.error
@@ -20,11 +27,11 @@ import uuid
 
 MANIFEST_FILE = "output/reels_manifest.json"
 CLIPS_DIR = "output/reels_clips"
+MUSIC_DIR = "assets/music"
+FINAL_VIDEO_SILENT = "output/reels_video_silent.mp4"
 FINAL_VIDEO = "output/reels_video.mp4"
 OUTPUT_FILE = "output/reels_content.json"
 FPS = 25
-SLIDE_DURATION = 2.0
-LAST_SLIDE_DURATION = 3.0
 WIDTH = 1080
 HEIGHT = 1920
 MAX_RETRIES = 5
@@ -44,23 +51,36 @@ def run(cmd):
     return result
 
 
-def build_clip(frame_path, duration, clip_path):
-    frames = int(duration * FPS)
-    zoom_filter = (
-        f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-        f"crop={WIDTH}:{HEIGHT},"
-        f"zoompan=z='min(zoom+0.0015,1.08)':d={frames}:s={WIDTH}x{HEIGHT}:fps={FPS}"
+def get_duration_seconds(path):
+    result = run([
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        path,
+    ])
+    return float(result.stdout.strip())
+
+
+def build_clip(clip_path, overlay_path, duration, output_path):
+    filter_complex = (
+        f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+        f"crop={WIDTH}:{HEIGHT}[bg];[bg][1:v]overlay=0:0[outv]"
     )
     run([
         "ffmpeg", "-y",
+        "-stream_loop", "-1",
+        "-i", clip_path,
         "-loop", "1",
-        "-i", frame_path,
-        "-vf", zoom_filter,
+        "-i", overlay_path,
+        "-filter_complex", filter_complex,
+        "-map", "[outv]",
         "-t", str(duration),
+        "-r", str(FPS),
         "-pix_fmt", "yuv420p",
         "-c:v", "libx264",
         "-preset", "veryfast",
-        clip_path,
+        "-an",
+        output_path,
     ])
 
 
@@ -76,6 +96,37 @@ def concat_clips(clip_paths, output_path):
         "-safe", "0",
         "-i", list_file,
         "-c", "copy",
+        output_path,
+    ])
+
+
+def add_background_music(video_path, output_path):
+    music_files = glob.glob(os.path.join(MUSIC_DIR, "*.mp3"))
+    if not music_files:
+        log("UPOZORENJE: nema MP3 fajlova u assets/music/ - video ostaje bez zvuka.")
+        shutil.copyfile(video_path, output_path)
+        return
+
+    music_path = random.choice(music_files)
+    log(f"Dodajem muziku: {music_path}")
+    duration = get_duration_seconds(video_path)
+    fade_start = max(duration - 2, 0)
+
+    filter_complex = (
+        f"[1:a]atrim=0:{duration},afade=t=out:st={fade_start}:d=2[aout]"
+    )
+    run([
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-stream_loop", "-1",
+        "-i", music_path,
+        "-filter_complex", filter_complex,
+        "-map", "0:v",
+        "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-shortest",
         output_path,
     ])
 
@@ -145,19 +196,21 @@ def main():
     with open(MANIFEST_FILE, "r", encoding="utf-8") as f:
         manifest = json.load(f)
 
-    frame_paths = manifest["frame_paths"]
+    slides = manifest["slides"]
     os.makedirs(CLIPS_DIR, exist_ok=True)
 
     clip_paths = []
-    for i, frame_path in enumerate(frame_paths):
-        duration = LAST_SLIDE_DURATION if i == len(frame_paths) - 1 else SLIDE_DURATION
+    for i, slide in enumerate(slides):
         clip_path = os.path.join(CLIPS_DIR, f"clip_{i:02d}.mp4")
-        log(f"Pravim klip {i + 1}/{len(frame_paths)} (trajanje {duration}s)...")
-        build_clip(frame_path, duration, clip_path)
+        log(f"Pravim klip {i + 1}/{len(slides)} (trajanje {slide['duration']}s)...")
+        build_clip(slide["clip_path"], slide["overlay_path"], slide["duration"], clip_path)
         clip_paths.append(clip_path)
 
     log("Spajam klipove...")
-    concat_clips(clip_paths, FINAL_VIDEO)
+    concat_clips(clip_paths, FINAL_VIDEO_SILENT)
+
+    log("Dodajem muziku...")
+    add_background_music(FINAL_VIDEO_SILENT, FINAL_VIDEO)
 
     video_url = upload_video_to_cloudinary(FINAL_VIDEO)
 
