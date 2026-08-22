@@ -1,0 +1,31 @@
+name: Bootstrap Instagram Token
+
+# Ovaj workflow se pokreće SAMO RUČNO (workflow_dispatch), jednom, kada prvi put
+# podešavamo token, ili ako refresh mehanizam iz nekog razloga ne uspe 60 dana
+# zaredom pa nam token istekne pa moramo da krenemo ispočetka.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pokreni bootstrap skriptu
+        env:
+          IG_SHORT_LIVED_TOKEN: ${{ secrets.IG_SHORT_LIVED_TOKEN }}
+          IG_APP_SECRET: ${{ secrets.IG_APP_SECRET }}
+        run: python scripts/bootstrap_token.py
