@@ -33,9 +33,9 @@ RETRY_DELAYS = [5, 10, 20, 40]
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 WIDTH = 1080
 HEIGHT = 1920
-SLIDE_DURATION = 2.5
-LAST_SLIDE_DURATION = 3.5
-MIN_CLIP_DURATION = 3
+SLIDE_DURATION = 3.5
+LAST_SLIDE_DURATION = 4.5
+MIN_CLIP_DURATION = 4
 PEXELS_VIDEO_SEARCH_URL = "https://api.pexels.com/videos/search"
 
 # Upiti biraju scene gde se lice NE vidi jasno (siluete, atmosfera grada/
@@ -147,7 +147,7 @@ def render_overlay(text):
     draw = ImageDraw.Draw(img, "RGBA")
 
     try:
-        font_size = int(WIDTH * 0.075)
+        font_size = int(WIDTH * 0.055)
         font = ImageFont.truetype(FONT_PATH, font_size)
     except OSError:
         log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
@@ -173,10 +173,16 @@ def render_overlay(text):
     line_height = int(font_size * 1.3)
     total_text_height = line_height * len(lines)
 
-    band_top = HEIGHT - total_text_height - int(HEIGHT * 0.14)
-    draw.rectangle([(0, band_top), (WIDTH, HEIGHT)], fill=(0, 0, 0, 130))
+    # Ostavljamo prazan prostor pri samom dnu ekrana (tu Instagram prikazuje
+    # svoje dugmiće/caption preko videa) - tekst je podignut iznad toga.
+    bottom_margin = int(HEIGHT * 0.22)
+    padding = int(HEIGHT * 0.03)
 
-    y = HEIGHT - total_text_height - int(HEIGHT * 0.09)
+    band_bottom = HEIGHT - bottom_margin
+    band_top = band_bottom - total_text_height - padding * 2
+    draw.rectangle([(0, band_top), (WIDTH, band_bottom)], fill=(0, 0, 0, 130))
+
+    y = band_bottom - total_text_height - padding
     for line in lines:
         bbox = draw.textbbox((0, 0), line, font=font)
         line_width = bbox[2] - bbox[0]
