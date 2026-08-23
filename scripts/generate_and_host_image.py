@@ -66,6 +66,11 @@ HIGHLIGHT_WORDS = {
     "tajna", "tajno", "anonimno", "anoniman",
     "ljubav", "strast", "strasti",
     "sada", "odmah", "danas",
+    "garantovano", "garantujemo",
+    "vrele", "vrela",
+    "igre",
+    "jedini", "jedina", "jedinstveno",
+}
 }
 
 # Upiti biraju scene koje prikazuju DISKRETNOST, ANONIMNOST i LJUBAV -
