@@ -6,8 +6,8 @@ generate_and_host_carousel.py
    content/stories.json.
 2. Za SVAKI slajd traži PRAVU fotografiju preko Pexels API-ja (besplatno) -
    biramo scene koje prikazuju diskretnost, anonimnost i ljubav (siluete,
-   senke, dodir ruku) - lice se NE vidi jasno, da izgleda autentično i da
-   izbegnemo pravni rizik.
+   senke, dodir ruku), sa evropskim/balkanskim izgledom osoba - lice se NE
+   vidi jasno, da izgleda autentično i da izbegnemo pravni rizik.
 3. Iseca sliku na tačan format (1080x1350), tamni je (jak crni sloj preko
    cele slike) i ispisuje tekst tog slajda VELIKIM SLOVIMA po sredini
    (Pillow) - ključne reči su istaknute u ljubičastoj boji, ostatak beo.
@@ -64,19 +64,19 @@ HIGHLIGHT_WORDS = {
 }
 
 # Upiti biraju scene koje prikazuju DISKRETNOST, ANONIMNOST i LJUBAV -
-# siluete, senke, dodir ruku - lice se NE vidi jasno. Izgleda autentično i
-# izbegava pravni rizik.
+# siluete, senke, dodir ruku, sa evropskim/balkanskim izgledom osoba - lice
+# se NE vidi jasno. Izgleda autentično i izbegava pravni rizik.
 SCENE_QUERIES = [
-    "couple silhouette embrace night city",
-    "hands touching candlelight love",
-    "couple silhouette distance night street",
-    "candlelight bar close up hands",
-    "nightclub lights silhouette dancing",
-    "couple walking night city from behind",
-    "mysterious silhouette rain window night",
-    "anonymous crowd blurred motion night city",
-    "couple kissing silhouette sunset",
-    "phone screen dark room scrolling hand",
+    "european couple silhouette embrace night city",
+    "european hands touching candlelight love",
+    "european couple silhouette distance night street",
+    "european couple candlelight bar close up hands",
+    "european nightclub lights silhouette dancing couple",
+    "european couple walking night city from behind",
+    "mysterious european silhouette rain window night",
+    "anonymous european crowd blurred motion night city",
+    "european couple kissing silhouette sunset",
+    "european person phone screen dark room scrolling hand",
 ]
 
 
@@ -166,7 +166,7 @@ def pick_photo_url(api_key):
     if not photos:
         log("Nema rezultata za taj upit, probam rezervni upit...")
         fallback_url = (
-            f"{PEXELS_SEARCH_URL}?query=couple+silhouette+romantic"
+            f"{PEXELS_SEARCH_URL}?query=european+couple+silhouette+romantic"
             f"&per_page=15&page=1&orientation=portrait"
         )
         data = http_get_json_with_retry(fallback_url, headers={"Authorization": api_key})
