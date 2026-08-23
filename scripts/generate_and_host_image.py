@@ -71,7 +71,6 @@ HIGHLIGHT_WORDS = {
     "igre",
     "jedini", "jedina", "jedinstveno",
 }
-}
 
 # Upiti biraju scene koje prikazuju DISKRETNOST, ANONIMNOST i LJUBAV -
 # siluete, senke, dodir ruku, sa evropskim/balkanskim izgledom osoba - lice
