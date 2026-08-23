@@ -5,7 +5,8 @@ generate_reels_assets.py
 1. Bira nasumičnu "priču" iz content/stories.json (isti narativ kao Carousel).
 2. Za SVAKI slajd traži PRAVI kratak video klip preko Pexels API-ja
    (besplatno) - biramo scene gde se lice NE vidi jasno (siluete, atmosfera
-   grada/bara/sobe) da izgleda autentično i da izbegnemo pravni rizik.
+   grada/bara/sobe), sa evropskim/balkanskim izgledom osoba - izgleda
+   autentično i izbegava pravni rizik.
 3. Preuzima svaki klip LOKALNO u output/reels_clips_raw/ (potrebni su
    lokalno za ffmpeg u sledećem koraku).
 4. Za svaki slajd generiše PROVIDAN PNG (1080x1920) sa tekstom tog slajda
@@ -39,16 +40,17 @@ MIN_CLIP_DURATION = 4
 PEXELS_VIDEO_SEARCH_URL = "https://api.pexels.com/videos/search"
 
 # Upiti biraju scene gde se lice NE vidi jasno (siluete, atmosfera grada/
-# bara/sobe) - izgleda autentično i izbegava pravni rizik.
+# bara/sobe), sa evropskim/balkanskim izgledom osoba - izgleda autentično i
+# izbegava pravni rizik.
 SCENE_VIDEO_QUERIES = [
     "city night lights traffic",
     "candle flame close up night",
-    "couple silhouette walking night",
+    "european couple silhouette walking night",
     "bar nightlife lights ambience",
-    "hands touching table candlelight",
-    "nightclub dancing lights silhouette",
+    "european hands touching table candlelight",
+    "european nightclub dancing lights silhouette",
     "city window night view room",
-    "couple silhouette sunset romantic",
+    "european couple silhouette sunset romantic",
 ]
 
 
