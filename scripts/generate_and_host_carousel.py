@@ -5,10 +5,13 @@ generate_and_host_carousel.py
 1. Bira nasumičnu "priču" (niz od 6-7 slajdova koji grade narativ) iz
    content/stories.json.
 2. Za SVAKI slajd traži PRAVU fotografiju preko Pexels API-ja (besplatno) -
-   biramo scene gde se lice NE vidi jasno (siluete, atmosfera, pogled sa
-   leđa) da izgleda autentično i da izbegnemo pravni rizik.
-3. Iseca sliku na tačan format (1080x1350) i ispisuje tekst tog slajda
-   preko slike (Pillow) - tekst po sredini, narativni stil, BEZ emoji.
+   biramo scene koje prikazuju diskretnost, anonimnost i ljubav (siluete,
+   senke, dodir ruku) - lice se NE vidi jasno, da izgleda autentično i da
+   izbegnemo pravni rizik.
+3. Iseca sliku na tačan format (1080x1350), tamni je (jak crni sloj preko
+   cele slike) i ispisuje tekst tog slajda VELIKIM SLOVIMA po sredini
+   (Pillow) - ključne reči su istaknute u ljubičastoj boji, ostatak beo.
+   Dodaje brojčanu oznaku slajda (npr. "3/7") i mali brend tag. BEZ emoji.
 4. Otpremi svaku sliku na Cloudinary.
 5. Upisuje listu image_url-ova i glavni caption u output/carousel_content.json
    za publish_carousel.py.
@@ -35,17 +38,45 @@ TARGET_WIDTH = 1080
 TARGET_HEIGHT = 1350
 PEXELS_SEARCH_URL = "https://api.pexels.com/v1/search"
 
-# Upiti biraju scene gde se lice NE vidi jasno (siluete, atmosfera sobe/
-# izlaska) - izgleda autentično i izbegava pravni rizik.
+# Ljubičasta/lila akcentna boja za istaknute reči - menjaj samo ovu liniju
+# ako želiš drugu nijansu.
+ACCENT_COLOR = (191, 64, 255, 255)
+
+# Reči koje će biti istaknute akcentnom bojom kad se pojave u tekstu slajda
+# (ostatak teksta ostaje beo). Poredi se bez velikih/malih slova i
+# interpunkcije.
+HIGHLIGHT_WORDS = {
+    "srbi", "srpkinje", "srba", "srpkinja",
+    "blizini", "blizine", "blizu",
+    "večeras", "noćas",
+    "smuvaš", "smuvaju", "smuvaj", "smuvao", "smuvala", "smuvate", "smuvaćeš",
+    "srpskomuvanje.rs",
+    "app", "app-a", "app-u",
+    "srpski", "srbiji",
+    "najhotiji", "hotiji", "hot",
+    "besplatno", "besplatan", "besplatna",
+    "diskretno", "diskretan", "diskretna", "diskretnost",
+    "prvi", "prvog",
+    "potpuno",
+    "tajna", "tajno", "anonimno", "anoniman",
+    "ljubav", "strast", "strasti",
+    "sada", "odmah", "danas",
+}
+
+# Upiti biraju scene koje prikazuju DISKRETNOST, ANONIMNOST i LJUBAV -
+# siluete, senke, dodir ruku - lice se NE vidi jasno. Izgleda autentično i
+# izbegava pravni rizik.
 SCENE_QUERIES = [
-    "city street night lights empty",
-    "phone screen dark room scrolling hand",
+    "couple silhouette embrace night city",
+    "hands touching candlelight love",
     "couple silhouette distance night street",
     "candlelight bar close up hands",
     "nightclub lights silhouette dancing",
     "couple walking night city from behind",
-    "bedroom window city view night",
-    "two wine glasses table night date",
+    "mysterious silhouette rain window night",
+    "anonymous crowd blurred motion night city",
+    "couple kissing silhouette sunset",
+    "phone screen dark room scrolling hand",
 ]
 
 
@@ -165,24 +196,14 @@ def crop_to_fill(img, target_w, target_h):
     return img.crop((left, top, left + target_w, top + target_h))
 
 
-def add_slide_text(image_bytes, text):
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    img = crop_to_fill(img, TARGET_WIDTH, TARGET_HEIGHT)
-    width, height = img.size
+def normalize_word(word):
+    return word.strip(".,!?:;()\"'„“—-").lower()
 
-    try:
-        font_size = int(width * 0.075)
-        font = ImageFont.truetype(FONT_PATH, font_size)
-    except OSError:
-        log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
-        font = ImageFont.load_default()
-        font_size = 20
 
-    draw = ImageDraw.Draw(img)
+def wrap_text(draw, text, font, max_width):
     words = text.split()
     lines = []
     current_line = ""
-    max_width = int(width * 0.85)
     for word in words:
         test_line = (current_line + " " + word).strip()
         bbox = draw.textbbox((0, 0), test_line, font=font)
@@ -194,25 +215,103 @@ def add_slide_text(image_bytes, text):
             current_line = word
     if current_line:
         lines.append(current_line)
+    return lines
 
-    line_height = int(font_size * 1.3)
-    total_text_height = line_height * len(lines)
 
-    # Blaže zatamnjenje cele slike (65/255 ~ 25%) - fotografija ostaje jasno
-    # vidljiva, dovoljno samo da beli tekst bude čitljiv
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 65))
-    img = Image.alpha_composite(img.convert("RGBA"), overlay)
+def draw_highlighted_line(draw, line, font, y, canvas_width):
+    words = line.split(" ")
+    space_bbox = draw.textbbox((0, 0), " ", font=font)
+    space_width = space_bbox[2] - space_bbox[0]
+
+    widths = []
+    for word in words:
+        bbox = draw.textbbox((0, 0), word, font=font)
+        widths.append(bbox[2] - bbox[0])
+
+    total_width = sum(widths) + space_width * max(len(words) - 1, 0)
+    x = (canvas_width - total_width) / 2
+
+    for word, w in zip(words, widths):
+        is_highlight = normalize_word(word) in HIGHLIGHT_WORDS
+        color = ACCENT_COLOR if is_highlight else (255, 255, 255, 255)
+        for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2)]:
+            draw.text((x + dx, y + dy), word, font=font, fill=(0, 0, 0, 255))
+        draw.text((x, y), word, font=font, fill=color)
+        x += w + space_width
+
+
+def draw_brand_tag(draw, font, width, height):
+    text = "SRPSKOMUVANJE.RS"
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    pad_x = int(width * 0.02)
+    pad_y = int(height * 0.01)
+
+    left = width - int(width * 0.04) - text_w - pad_x * 2
+    top = height - int(height * 0.04) - text_h - pad_y * 2
+    right = left + text_w + pad_x * 2
+    bottom = top + text_h + pad_y * 2
+
+    draw.rectangle([(left, top), (right, bottom)], outline=ACCENT_COLOR, width=2, fill=(0, 0, 0, 150))
+    draw.text((left + pad_x, top + pad_y - bbox[1]), text, font=font, fill=ACCENT_COLOR)
+
+
+def draw_page_badge(draw, index, total, font, width, height):
+    text = f"{index}/{total}"
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    pad_x = int(width * 0.025)
+    pad_y = int(height * 0.012)
+
+    left = int(width * 0.04)
+    top = int(height * 0.04)
+    right = left + text_w + pad_x * 2
+    bottom = top + text_h + pad_y * 2
+
+    draw.rectangle([(left, top), (right, bottom)], outline=ACCENT_COLOR, width=3, fill=(0, 0, 0, 160))
+    draw.text((left + pad_x, top + pad_y - bbox[1]), text, font=font, fill=(255, 255, 255, 255))
+
+
+def add_slide_text(image_bytes, text, slide_number, total_slides):
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = crop_to_fill(img, TARGET_WIDTH, TARGET_HEIGHT)
+    width, height = img.size
+
+    # Mnogo tamnija pozadina nego pre - tekst sad dominira, slika je
+    # atmosfera u pozadini
+    img = img.convert("RGBA")
+    dark_overlay = Image.new("RGBA", img.size, (0, 0, 0, 165))
+    img = Image.alpha_composite(img, dark_overlay)
     draw = ImageDraw.Draw(img, "RGBA")
+
+    try:
+        font_size = int(width * 0.085)
+        font = ImageFont.truetype(FONT_PATH, font_size)
+        badge_font = ImageFont.truetype(FONT_PATH, int(width * 0.045))
+        tag_font = ImageFont.truetype(FONT_PATH, int(width * 0.03))
+    except OSError:
+        log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
+        font = ImageFont.load_default()
+        badge_font = ImageFont.load_default()
+        tag_font = ImageFont.load_default()
+        font_size = 20
+
+    text_upper = text.upper()
+    max_width = int(width * 0.85)
+    lines = wrap_text(draw, text_upper, font, max_width)
+
+    line_height = int(font_size * 1.15)
+    total_text_height = line_height * len(lines)
 
     y = (height - total_text_height) / 2
     for line in lines:
-        bbox = draw.textbbox((0, 0), line, font=font)
-        line_width = bbox[2] - bbox[0]
-        x = (width - line_width) / 2
-        for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2)]:
-            draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0, 255))
-        draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
+        draw_highlighted_line(draw, line, font, y, width)
         y += line_height
+
+    draw_page_badge(draw, slide_number, total_slides, badge_font, width, height)
+    draw_brand_tag(draw, tag_font, width, height)
 
     img = img.convert("RGB")
     buf = io.BytesIO()
@@ -258,12 +357,13 @@ def main():
     story = pick_story()
     log(f"Izabrana priča: {story['title']} ({len(story['slides'])} slajdova)")
 
+    total_slides = len(story["slides"])
     image_urls = []
     for i, slide_text in enumerate(story["slides"]):
-        log(f"Slajd {i + 1}/{len(story['slides'])}: {slide_text}")
+        log(f"Slajd {i + 1}/{total_slides}: {slide_text}")
         photo_url = pick_photo_url(api_key)
         base_image = http_get_bytes_with_retry(photo_url)
-        final_image = add_slide_text(base_image, slide_text)
+        final_image = add_slide_text(base_image, slide_text, i + 1, total_slides)
         url = upload_to_cloudinary(final_image)
         image_urls.append(url)
 
