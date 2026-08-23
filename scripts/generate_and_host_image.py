@@ -5,11 +5,13 @@ generate_and_host_image.py
 1. Bira nasumičan hook+caption iz banke tekstova (content/captions.json) za
    zadatu kategoriju.
 2. Traži PRAVU fotografiju preko Pexels API-ja (besplatno, sa API ključem) -
-   biramo isključivo scene gde se lice NE vidi jasno (siluete, pogled sa
-   leđa, atmosfera) da izgleda autentično i da izbegnemo pravni rizik
-   korišćenja tuđeg lika.
-3. Iseca sliku na tačan format (1080x1350) i dodaje hook tekst preko slike
-   (Pillow) - BEZ emoji (font ih ne podržava, emoji idu samo u caption).
+   biramo isključivo scene koje prikazuju diskretnost, anonimnost i ljubav
+   (siluete, senke, dodir ruku) - lice se NE vidi jasno, da izgleda
+   autentično i da izbegnemo pravni rizik korišćenja tuđeg lika.
+3. Iseca sliku na tačan format (1080x1350), tamni je (crni sloj preko cele
+   slike + jača zona iza teksta), i ispisuje hook VELIKIM SLOVIMA (Pillow) -
+   ključne reči su istaknute u ljubičastoj boji, ostatak beo. BEZ emoji
+   (font ih ne podržava, emoji idu samo u caption ispod objave).
 4. Otpremi finalnu sliku na Cloudinary (besplatan hosting) da dobije javni URL.
 5. Upisuje rezultat (image_url, caption, category) u output/post_content.json
    za sledeći korak (publish skriptu) da pročita.
@@ -40,19 +42,45 @@ TARGET_WIDTH = 1080
 TARGET_HEIGHT = 1350
 PEXELS_SEARCH_URL = "https://api.pexels.com/v1/search"
 
-# Upiti biraju scene gde se lice NE vidi jasno (siluete, pogled sa leđa,
-# atmosfera sobe/izlaska) - izgleda autentično i izbegava pravni rizik.
+# Ljubičasta/lila akcentna boja za istaknute reči - menjaj samo ovu liniju
+# ako želiš drugu nijansu.
+ACCENT_COLOR = (191, 64, 255, 255)
+
+# Reči koje će biti istaknute akcentnom bojom kad se pojave u hook tekstu
+# (ostatak teksta ostaje beo). Poredi se bez velikih/malih slova i
+# interpunkcije.
+HIGHLIGHT_WORDS = {
+    "srbi", "srpkinje", "srba", "srpkinja",
+    "blizini", "blizine", "blizu",
+    "večeras", "noćas",
+    "smuvaš", "smuvaju", "smuvaj", "smuvao", "smuvala", "smuvate", "smuvaćeš",
+    "srpskomuvanje.rs",
+    "app", "app-a", "app-u",
+    "srpski", "srbiji",
+    "najhotiji", "hotiji", "hot",
+    "besplatno", "besplatan", "besplatna",
+    "diskretno", "diskretan", "diskretna", "diskretnost",
+    "prvi", "prvog",
+    "potpuno",
+    "tajna", "tajno", "anonimno", "anoniman",
+    "ljubav", "strast", "strasti",
+    "sada", "odmah", "danas",
+}
+
+# Upiti biraju scene koje prikazuju DISKRETNOST, ANONIMNOST i LJUBAV -
+# siluete, senke, dodir ruku - lice se NE vidi jasno. Izgleda autentično i
+# izbegava pravni rizik.
 PEXELS_QUERY_POOLS = {
     "cta": [
         "couple silhouette sunset holding hands",
         "romantic couple close up night city lights",
-        "hotel room window night city view",
+        "couple silhouette secret embrace night",
         "couple dancing silhouette nightclub",
     ],
     "humor_citati": [
         "friends laughing silhouette bar night",
         "couple laughing close up candlelight",
-        "rooftop bar couple silhouette sunset",
+        "secret smile close up night portrait",
         "two people clinking glasses night out",
     ],
     "relatable": [
@@ -184,24 +212,14 @@ def crop_to_fill(img, target_w, target_h):
     return img.crop((left, top, left + target_w, top + target_h))
 
 
-def add_hook_text(image_bytes, hook_text):
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    img = crop_to_fill(img, TARGET_WIDTH, TARGET_HEIGHT)
-    draw = ImageDraw.Draw(img, "RGBA")
-    width, height = img.size
+def normalize_word(word):
+    return word.strip(".,!?:;()\"'„“—-").lower()
 
-    try:
-        font_size = int(width * 0.065)
-        font = ImageFont.truetype(FONT_PATH, font_size)
-    except OSError:
-        log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
-        font = ImageFont.load_default()
-        font_size = 20
 
-    words = hook_text.split()
+def wrap_text(draw, text, font, max_width):
+    words = text.split()
     lines = []
     current_line = ""
-    max_width = int(width * 0.85)
     for word in words:
         test_line = (current_line + " " + word).strip()
         bbox = draw.textbbox((0, 0), test_line, font=font)
@@ -213,25 +231,91 @@ def add_hook_text(image_bytes, hook_text):
             current_line = word
     if current_line:
         lines.append(current_line)
+    return lines
 
-    line_height = int(font_size * 1.25)
+
+def draw_highlighted_line(draw, line, font, y, canvas_width):
+    words = line.split(" ")
+    space_bbox = draw.textbbox((0, 0), " ", font=font)
+    space_width = space_bbox[2] - space_bbox[0]
+
+    widths = []
+    for word in words:
+        bbox = draw.textbbox((0, 0), word, font=font)
+        widths.append(bbox[2] - bbox[0])
+
+    total_width = sum(widths) + space_width * max(len(words) - 1, 0)
+    x = (canvas_width - total_width) / 2
+
+    for word, w in zip(words, widths):
+        is_highlight = normalize_word(word) in HIGHLIGHT_WORDS
+        color = ACCENT_COLOR if is_highlight else (255, 255, 255, 255)
+        for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2)]:
+            draw.text((x + dx, y + dy), word, font=font, fill=(0, 0, 0, 255))
+        draw.text((x, y), word, font=font, fill=color)
+        x += w + space_width
+
+
+def draw_brand_tag(draw, font, width, height, corner="bottom-right"):
+    text = "SRPSKOMUVANJE.RS"
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    pad_x = int(width * 0.02)
+    pad_y = int(height * 0.01)
+
+    if corner == "top-left":
+        left = int(width * 0.04)
+        top = int(height * 0.04)
+    else:
+        left = width - int(width * 0.04) - text_w - pad_x * 2
+        top = height - int(height * 0.04) - text_h - pad_y * 2
+
+    right = left + text_w + pad_x * 2
+    bottom = top + text_h + pad_y * 2
+    draw.rectangle([(left, top), (right, bottom)], outline=ACCENT_COLOR, width=2, fill=(0, 0, 0, 150))
+    draw.text((left + pad_x, top + pad_y - bbox[1]), text, font=font, fill=ACCENT_COLOR)
+
+
+def add_hook_text(image_bytes, hook_text):
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = crop_to_fill(img, TARGET_WIDTH, TARGET_HEIGHT)
+    width, height = img.size
+
+    # Tamnija pozadina - lagani sloj preko cele slike + jača zona iza teksta
+    img = img.convert("RGBA")
+    dark_overlay = Image.new("RGBA", img.size, (0, 0, 0, 100))
+    img = Image.alpha_composite(img, dark_overlay)
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    try:
+        font_size = int(width * 0.078)
+        font = ImageFont.truetype(FONT_PATH, font_size)
+        tag_font = ImageFont.truetype(FONT_PATH, int(width * 0.032))
+    except OSError:
+        log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
+        font = ImageFont.load_default()
+        tag_font = ImageFont.load_default()
+        font_size = 20
+
+    hook_upper = hook_text.upper()
+    max_width = int(width * 0.85)
+    lines = wrap_text(draw, hook_upper, font, max_width)
+
+    line_height = int(font_size * 1.15)
     total_text_height = line_height * len(lines)
 
-    # Poluprovidna traka SAMO pri dnu slike (ne cela slika), da ostatak
-    # fotografije ostane jasno vidljiv
-    band_top = height - total_text_height - int(height * 0.08)
-    draw.rectangle([(0, band_top), (width, height)], fill=(0, 0, 0, 110))
+    band_top = height - total_text_height - int(height * 0.10)
+    draw.rectangle([(0, band_top), (width, height)], fill=(0, 0, 0, 175))
 
-    y = height - total_text_height - int(height * 0.05)
+    y = height - total_text_height - int(height * 0.06)
     for line in lines:
-        bbox = draw.textbbox((0, 0), line, font=font)
-        line_width = bbox[2] - bbox[0]
-        x = (width - line_width) / 2
-        for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2)]:
-            draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0, 255))
-        draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
+        draw_highlighted_line(draw, line, font, y, width)
         y += line_height
 
+    draw_brand_tag(draw, tag_font, width, height, corner="top-left")
+
+    img = img.convert("RGB")
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=90)
     return buf.getvalue()
