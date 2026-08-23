@@ -6,8 +6,9 @@ generate_and_host_image.py
    zadatu kategoriju.
 2. Traži PRAVU fotografiju preko Pexels API-ja (besplatno, sa API ključem) -
    biramo isključivo scene koje prikazuju diskretnost, anonimnost i ljubav
-   (siluete, senke, dodir ruku) - lice se NE vidi jasno, da izgleda
-   autentično i da izbegnemo pravni rizik korišćenja tuđeg lika.
+   (siluete, senke, dodir ruku), sa evropskim/balkanskim izgledom osoba -
+   lice se NE vidi jasno, da izgleda autentično i da izbegnemo pravni rizik
+   korišćenja tuđeg lika.
 3. Iseca sliku na tačan format (1080x1350), tamni je (crni sloj preko cele
    slike + jača zona iza teksta), i ispisuje hook VELIKIM SLOVIMA (Pillow) -
    ključne reči su istaknute u ljubičastoj boji, ostatak beo. BEZ emoji
@@ -68,26 +69,26 @@ HIGHLIGHT_WORDS = {
 }
 
 # Upiti biraju scene koje prikazuju DISKRETNOST, ANONIMNOST i LJUBAV -
-# siluete, senke, dodir ruku - lice se NE vidi jasno. Izgleda autentično i
-# izbegava pravni rizik.
+# siluete, senke, dodir ruku, sa evropskim/balkanskim izgledom osoba - lice
+# se NE vidi jasno. Izgleda autentično i izbegava pravni rizik.
 PEXELS_QUERY_POOLS = {
     "cta": [
-        "couple silhouette sunset holding hands",
-        "romantic couple close up night city lights",
-        "couple silhouette secret embrace night",
-        "couple dancing silhouette nightclub",
+        "european couple silhouette sunset holding hands",
+        "european couple close up night city lights",
+        "european couple silhouette secret embrace night",
+        "european couple dancing silhouette nightclub",
     ],
     "humor_citati": [
-        "friends laughing silhouette bar night",
-        "couple laughing close up candlelight",
-        "secret smile close up night portrait",
-        "two people clinking glasses night out",
+        "european friends laughing silhouette bar night",
+        "european couple laughing close up candlelight",
+        "european person secret smile close up night portrait",
+        "two european people clinking glasses night out",
     ],
     "relatable": [
-        "person texting phone bed dark room",
-        "woman smiling at phone screen dark room",
-        "getting ready mirror silhouette bedroom",
-        "friends laughing cafe table from behind",
+        "european person texting phone bed dark room",
+        "european woman smiling at phone screen dark room",
+        "european woman getting ready mirror silhouette bedroom",
+        "european friends laughing cafe table from behind",
     ],
 }
 
@@ -182,7 +183,7 @@ def pick_photo_url(category, api_key):
     if not photos:
         log("Nema rezultata za taj upit, probam rezervni upit...")
         fallback_url = (
-            f"{PEXELS_SEARCH_URL}?query=couple+silhouette+romantic"
+            f"{PEXELS_SEARCH_URL}?query=european+couple+silhouette+romantic"
             f"&per_page=15&page=1&orientation=portrait"
         )
         data = http_get_json_with_retry(fallback_url, headers={"Authorization": api_key})
