@@ -2,27 +2,24 @@
 """
 generate_and_host_story.py
 -----------------------------
-1. Bira nasumičan "profil" (ime, pol, godine) iz content/profiles.json,
-   isto kao Feed objave.
-2. Generiše HYPERREALISTIČAN portret te osobe preko Higgsfield API-ja
-   (plaćeno, ~$0.09-0.15 po slici) - Srbi/Srpkinje, autentično, ne
-   generički izgled.
-3. Iseca sliku na format cele Instagram Story (1080x1920), tamni je i
-   ispisuje IME, GODINE i kratku privlačnu rečenicu VELIKIM SLOVIMA
-   (Pillow) - ključne reči su istaknute u ljubičastoj boji, ostatak beo.
-   Ispod dodaje fiksnu CTA liniju (srpskomuvanje.rs - link u bio-u) u
-   ljubičastoj boji. BEZ emoji.
-4. Otpremi finalnu sliku na Cloudinary (besplatan hosting) da dobije javni
-   URL (Higgsfield čuva slike samo 7 dana, zato ih odmah prebacujemo).
-5. Upisuje rezultat (category, hook, image_url) u output/story_content.json
-   za publish_story.py.
-
-Poziva se ovako: python scripts/generate_and_host_story.py
-(kategorija se više ne koristi za ovaj format)
+1. Uzima SLEDEĆU neiskorišćenu sliku sa Google Drive-a, MEŠANO iz bilo kog
+   od sva 4 foldera: "Srpskomuvanje/feed/kartice", "feed/obicne slike",
+   "carousels/kartice", "carousels/obicne slike" - koji god ima slika.
+2a. Ako je slika "kartica" (već gotov dizajn) - slika se NE SEČE i NE
+    UKLAPA, ostaje u originalnim dimenzijama; dodaje joj se SAMO mala CTA
+    linija i logo pri dnu (Instagram Stories nemaju caption, pa CTA MORA
+    biti na samoj slici).
+2b. Ako je "obična slika" - uklapa se CELA (bez sečenja) u format Instagram
+    Story-ja (1080x1920), sa zamućenom pozadinom da popuni prazan prostor,
+    i dodaje se kratka "Priznajem: ..." izjava + CTA linija + logo.
+3. Otpremi finalnu sliku na Cloudinary da dobije javni URL.
+4. Upisuje rezultat (image_url i podatke o slici sa Drive-a) u
+   output/story_content.json za publish_story.py. Taj skript, POSLE
+   uspešnog objavljivanja, premešta iskorišćenu sliku u "Objavljeno"
+   folder na Drive-u da se nikad ne ponovi.
 
 NAPOMENA: Instagram Content Publishing API ne podržava caption za Stories,
-zato Stories NE nose caption - koristimo samo ime/godine/hook i dodajemo
-fiksnu CTA liniju direktno na sliku.
+zato se sav tekst (uključujući CTA) ispisuje direktno na sliku.
 """
 
 import io
@@ -31,13 +28,14 @@ import os
 import random
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 import uuid
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-PROFILES_FILE = "content/profiles.json"
+import gdrive_helper
+
+CONFESSIONS_FILE = "content/confessions.json"
 OUTPUT_FILE = "output/story_content.json"
 LOGO_PATH = "logo.png"
 MAX_RETRIES = 5
@@ -46,44 +44,14 @@ FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 TARGET_WIDTH = 1080
 TARGET_HEIGHT = 1920
 CTA_TEXT = "SRPSKOMUVANJE.RS - LINK U BIO-U"
-HIGGSFIELD_ENDPOINT = "https://platform.higgsfield.ai/higgsfield-ai/soul/standard"
-HIGGSFIELD_ASPECT_RATIO = "9:16"
-HIGGSFIELD_RESOLUTION = "720p"
-MIN_AGE = 22
-MAX_AGE = 34
 
-# Ljubičasta/lila akcentna boja - menjaj samo ovu liniju ako želiš drugu
-# nijansu.
 ACCENT_COLOR = (191, 64, 255, 255)
 
-# Reči koje će biti istaknute akcentnom bojom kad se pojave u tekstu na
-# slici (ostatak teksta ostaje beo). Poredi se bez velikih/malih slova i
-# interpunkcije.
 HIGHLIGHT_WORDS = {
-    "sam", "sama",
-    "tražim", "čekam", "spreman", "spremna",
-    "pravog", "pravu", "pravo",
-    "umoran", "umorna",
-    "srpskomuvanje.rs",
+    "priznajem",
+    "volim", "verujem", "tražim", "čekam",
     "besplatno", "besplatan", "besplatna",
     "diskretno", "diskretan", "diskretna",
-}
-
-# Higgsfield promptovi za hyperrealistične portrete - Slavic/Balkan izgled,
-# editorijalni stil, autentično, ne generički AI izgled.
-HIGGSFIELD_PROMPTS = {
-    "male": [
-        "Candid amateur smartphone selfie of an ordinary Serbian man in his late 20s, taken with a phone front camera in a dimly lit apartment, slightly imperfect framing and focus, unretouched skin with visible pores and minor imperfections, ordinary everyday clothing, typical Balkan Slavic features, unposed genuine expression, realistic amateur photo, not professionally shot, no filter, no retouching",
-        "Casual candid phone photo of an extremely handsome, tall, muscular Serbian man with an athletic build, taken by a friend at a kafana or bar, natural warm indoor lighting, slightly grainy low-light phone camera quality, real visible skin texture, typical Serbian features, unposed candid moment, casual clothes, authentic amateur snapshot, not a professional photoshoot",
-        "Real candid phone photo of an ordinary Serbian man standing outside on a street in his neighborhood, overcast daylight, slightly imperfect composition and framing, natural unretouched skin, typical Balkan Slavic features, plain ordinary clothing, genuine unposed expression, realistic amateur snapshot, not professionally shot",
-        "Amateur mirror selfie of an extremely attractive tall muscular Serbian man with an athletic build, casual gym or streetwear clothing, phone camera flash, slightly harsh uneven lighting typical of a real selfie, visible skin texture, typical Serbian features, unposed, authentic, not polished or edited",
-    ],
-    "female": [
-        "Candid amateur smartphone selfie of an ordinary Serbian woman in her late 20s, taken with a phone front camera in a dimly lit apartment, slightly imperfect framing and focus, unretouched skin with visible pores and minor imperfections, ordinary everyday clothing, little to no makeup, typical Balkan Slavic features, unposed genuine expression, realistic amateur photo, not professionally shot, no filter, no retouching",
-        "Casual candid phone photo of an extremely attractive Serbian woman, taken by a friend at a cafe or bar, natural warm indoor lighting, slightly grainy low-light phone camera quality, real visible skin texture, typical Serbian features, unposed candid moment, stylish casual outfit, authentic amateur snapshot, not a professional photoshoot",
-        "Real candid phone photo of an ordinary Serbian woman standing outside on a street in her neighborhood, overcast daylight, slightly imperfect composition and framing, natural unretouched skin, minimal makeup, typical Balkan Slavic features, plain ordinary clothing, genuine unposed expression, realistic amateur snapshot, not professionally shot",
-        "Amateur mirror selfie of an extremely attractive Serbian woman, stylish casual outfit, phone camera flash, slightly harsh uneven lighting typical of a real selfie, visible skin texture, typical Serbian features, unposed, authentic, not polished or edited",
-    ],
 }
 
 
@@ -91,182 +59,10 @@ def log(msg):
     print(f"[generate_and_host_story] {msg}", flush=True)
 
 
-def higgsfield_headers():
-    key_id = os.environ.get("HF_API_KEY_ID", "").strip()
-    key_secret = os.environ.get("HF_API_KEY_SECRET", "").strip()
-    if not key_id or not key_secret:
-        raise RuntimeError("Nedostaje HF_API_KEY_ID ili HF_API_KEY_SECRET.")
-    # User-Agent je OBAVEZAN - bez njega Higgsfield-ov Cloudflare vraća
-    # grešku 403 (error code 1010) jer podrazumevani Python User-Agent
-    # izgleda kao bot.
-    return {
-        "Authorization": f"Key {key_id}:{key_secret}",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-    }
-
-
-def http_get_bytes_with_retry(url, headers=None):
-    last_error = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            req_headers = {"User-Agent": "srpskomuvanje-bot/1.0"}
-            if headers:
-                req_headers.update(headers)
-            req = urllib.request.Request(url, headers=req_headers)
-            with urllib.request.urlopen(req, timeout=60) as response:
-                return response.read()
-        except urllib.error.HTTPError as e:
-            if 400 <= e.code < 500:
-                log(f"TRAJNA GREŠKA ({e.code}), odustajem.")
-                raise RuntimeError(f"Trajna greška {e.code}") from e
-            last_error = RuntimeError(f"HTTP {e.code}")
-            log(f"Privremena greška (pokušaj {attempt}/{MAX_RETRIES}): {last_error}")
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            last_error = e
-            log(f"Mrežna greška (pokušaj {attempt}/{MAX_RETRIES}): {e}")
-
-        if attempt < MAX_RETRIES:
-            delay = RETRY_DELAYS[attempt - 1]
-            log(f"Čekam {delay}s pre sledećeg pokušaja...")
-            time.sleep(delay)
-
-    raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
-
-
-def http_get_json(url, headers):
-    req = urllib.request.Request(url, method="GET")
-    for k, v in headers.items():
-        req.add_header(k, v)
-    with urllib.request.urlopen(req, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def http_post_json_with_retry(url, payload, headers):
-    data = json.dumps(payload).encode("utf-8")
-    last_error = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            req = urllib.request.Request(url, data=data, method="POST")
-            req.add_header("Content-Type", "application/json")
-            for k, v in headers.items():
-                req.add_header(k, v)
-            with urllib.request.urlopen(req, timeout=60) as response:
-                body = response.read().decode("utf-8")
-                return json.loads(body)
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            if 400 <= e.code < 500:
-                log(f"TRAJNA GREŠKA ({e.code}), odustajem. Odgovor: {body}")
-                raise RuntimeError(f"Trajna greška {e.code}: {body}") from e
-            last_error = RuntimeError(f"HTTP {e.code}: {body}")
-            log(f"Privremena greška (pokušaj {attempt}/{MAX_RETRIES}): {last_error}")
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            last_error = e
-            log(f"Mrežna greška (pokušaj {attempt}/{MAX_RETRIES}): {e}")
-
-        if attempt < MAX_RETRIES:
-            delay = RETRY_DELAYS[attempt - 1]
-            log(f"Čekam {delay}s pre sledećeg pokušaja...")
-            time.sleep(delay)
-
-    raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
-
-
-def poll_until_done(status_url, headers):
-    delay = 2
-    max_delay = 10
-    max_wait_seconds = 360
-    waited = 0
-    while waited < max_wait_seconds:
-        try:
-            data = http_get_json(status_url, headers)
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
-            log(f"Greška pri proveri statusa, pokušavam ponovo: {e}")
-            time.sleep(delay)
-            waited += delay
-            delay = min(delay + 1, max_delay)
-            continue
-
-        status = data.get("status")
-        log(f"Status generisanja: {status} (čekano {waited}s)")
-        if status == "completed":
-            return data
-        if status in ("failed", "nsfw", "canceled"):
-            raise RuntimeError(f"Higgsfield generisanje nije uspelo (status={status}).")
-
-        time.sleep(delay)
-        waited += delay
-        delay = min(delay + 1, max_delay)
-
-    raise RuntimeError("Higgsfield generisanje nije završeno u razumnom vremenu.")
-
-
-def generate_higgsfield_portrait(prompt):
-    headers = higgsfield_headers()
-    payload = {
-        "prompt": prompt,
-        "aspect_ratio": HIGGSFIELD_ASPECT_RATIO,
-        "resolution": HIGGSFIELD_RESOLUTION,
-    }
-    log(f"Šaljem zahtev Higgsfield-u: {prompt}")
-    submit_result = http_post_json_with_retry(HIGGSFIELD_ENDPOINT, payload, headers)
-
-    status_url = submit_result.get("status_url")
-    if not status_url:
-        raise RuntimeError(f"Neočekivan odgovor od Higgsfield-a: {submit_result}")
-
-    result = poll_until_done(status_url, headers)
-    images = result.get("images") or []
-    if not images or "url" not in images[0]:
-        raise RuntimeError(f"Higgsfield nije vratio sliku: {result}")
-    return images[0]["url"]
-
-
-def generate_portrait_with_fallback(prompt_pool):
-    last_error = None
-    for attempt in range(2):
-        prompt = random.choice(prompt_pool)
-        try:
-            return generate_higgsfield_portrait(prompt)
-        except RuntimeError as e:
-            last_error = e
-            log(f"Pokušaj generisanja nije uspeo ({e}), probam ponovo sa drugim promptom...")
-    raise RuntimeError(f"Higgsfield generisanje nije uspelo posle 2 pokušaja: {last_error}")
-
-
-def pick_profile():
-    with open(PROFILES_FILE, "r", encoding="utf-8") as f:
+def pick_confession():
+    with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-    gender = random.choice(["male", "female"])
-    name = random.choice(data["names"][gender])
-    age = random.randint(MIN_AGE, MAX_AGE)
-    hook = random.choice(data["hooks"][gender])
-    return {
-        "gender": gender,
-        "name": name,
-        "age": age,
-        "hook": hook,
-        "prompt_pool": HIGGSFIELD_PROMPTS[gender],
-    }
-
-
-def crop_to_fill(img, target_w, target_h):
-    src_w, src_h = img.size
-    src_ratio = src_w / src_h
-    target_ratio = target_w / target_h
-
-    if src_ratio > target_ratio:
-        new_h = target_h
-        new_w = max(target_w, int(src_w * (target_h / src_h)))
-    else:
-        new_w = target_w
-        new_h = max(target_h, int(src_h * (target_w / src_w)))
-
-    img = img.resize((new_w, new_h), Image.LANCZOS)
-    left = (new_w - target_w) // 2
-    top = (new_h - target_h) // 2
-    return img.crop((left, top, left + target_w, top + target_h))
+    return random.choice(data["confessions"])
 
 
 def normalize_word(word):
@@ -336,9 +132,6 @@ def load_logo():
 
 
 def draw_brand_badge(img, draw, width, height, corner="top-left"):
-    """Crta logo (logo.png, providna pozadina) + tekst 'srpskomuvanje'
-    u ćošku Story slike, na providnoj tamnoj pločici radi čitljivosti (slika
-    više nije zatamnjena preko cele površine, pa treba lokalni kontrast)."""
     logo = load_logo()
     text = "srpskomuvanje"
     try:
@@ -384,62 +177,105 @@ def draw_brand_badge(img, draw, width, height, corner="top-left"):
     draw.text((cursor_x, center_y - text_h // 2 - bbox[1]), text, font=badge_font, fill=(255, 255, 255, 255))
 
 
-def add_profile_text(image_bytes, profile):
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    img = crop_to_fill(img, TARGET_WIDTH, TARGET_HEIGHT)
-    width, height = img.size
+def fit_within_canvas(img, target_w, target_h):
+    """Uklapa CELU sliku (bez sečenja) unutar canvas-a, sa zamućenom
+    uvećanom kopijom iste slike kao pozadinom da popuni prazan prostor."""
+    img = img.convert("RGB")
+    src_w, src_h = img.size
 
-    # Slika ostaje SVETLA i jasna - bez zatamnjenja preko cele slike.
-    # Čitljivost teksta obezbeđuje samo tamna traka lokalno iza teksta
-    # (ispod, gde se ispisuje ime/tekst), ne cela fotografija.
+    fit_scale = min(target_w / src_w, target_h / src_h)
+    fit_w, fit_h = max(1, int(src_w * fit_scale)), max(1, int(src_h * fit_scale))
+    fitted = img.resize((fit_w, fit_h), Image.LANCZOS)
+
+    bg_scale = max(target_w / src_w, target_h / src_h)
+    bg_w, bg_h = max(1, int(src_w * bg_scale)), max(1, int(src_h * bg_scale))
+    bg = img.resize((bg_w, bg_h), Image.LANCZOS)
+    bg_left = (bg_w - target_w) // 2
+    bg_top = (bg_h - target_h) // 2
+    bg = bg.crop((bg_left, bg_top, bg_left + target_w, bg_top + target_h))
+    bg = bg.filter(ImageFilter.GaussianBlur(45))
+    dark = Image.new("RGB", bg.size, (0, 0, 0))
+    bg = Image.blend(bg, dark, 0.35)
+
+    canvas = bg.copy()
+    paste_x = (target_w - fit_w) // 2
+    paste_y = (target_h - fit_h) // 2
+    canvas.paste(fitted, (paste_x, paste_y))
+    return canvas
+
+
+def render_kartica_story(local_path):
+    """'Kartice' se NE SEKU niti uklapaju - ostaju u originalnim
+    dimenzijama. Dodaje se SAMO mala CTA linija + logo pri dnu, jer
+    Instagram Stories nemaju poseban caption."""
+    img = Image.open(local_path).convert("RGB")
+    width, height = img.size
     img = img.convert("RGBA")
     draw = ImageDraw.Draw(img, "RGBA")
 
     try:
-        name_font = ImageFont.truetype(FONT_PATH, int(width * 0.09))
-        hook_font = ImageFont.truetype(FONT_PATH, int(width * 0.065))
+        cta_font = ImageFont.truetype(FONT_PATH, int(width * 0.045))
+    except OSError:
+        cta_font = ImageFont.load_default()
+
+    cta_line_height = int(cta_font.size * 1.4) if hasattr(cta_font, "size") else 24
+    band_top = height - cta_line_height - int(height * 0.05)
+    draw.rectangle([(0, band_top), (width, height)], fill=(0, 0, 0, 150))
+    draw_accent_line(draw, CTA_TEXT, cta_font, height - cta_line_height - int(height * 0.02), width)
+
+    draw_brand_badge(img, draw, width, height, "top-left")
+
+    img = img.convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    return buf.getvalue()
+
+
+def render_obicna_slika_story(local_path):
+    img = Image.open(local_path)
+    canvas = fit_within_canvas(img, TARGET_WIDTH, TARGET_HEIGHT)
+    width, height = canvas.size
+    canvas = canvas.convert("RGBA")
+    draw = ImageDraw.Draw(canvas, "RGBA")
+
+    confession = pick_confession()
+
+    try:
+        text_font = ImageFont.truetype(FONT_PATH, int(width * 0.075))
         cta_font = ImageFont.truetype(FONT_PATH, int(width * 0.042))
     except OSError:
         log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
-        name_font = ImageFont.load_default()
-        hook_font = ImageFont.load_default()
+        text_font = ImageFont.load_default()
         cta_font = ImageFont.load_default()
 
-    name_line = f"{profile['name'].upper()}, {profile['age']}"
-    hook_upper = profile["hook"].upper()
+    text_upper = confession.upper()
     max_width = int(width * 0.85)
-    hook_lines = wrap_text(draw, hook_upper, hook_font, max_width)
+    lines = wrap_text(draw, text_upper, text_font, max_width)
 
-    name_line_height = int(name_font.size * 1.15) if hasattr(name_font, "size") else 28
-    hook_line_height = int(hook_font.size * 1.15) if hasattr(hook_font, "size") else 24
+    line_height = int(text_font.size * 1.15) if hasattr(text_font, "size") else 28
     cta_line_height = int(cta_font.size * 1.3) if hasattr(cta_font, "size") else 20
     gap = int(height * 0.02)
 
-    total_text_height = (
-        name_line_height + gap + hook_line_height * len(hook_lines) + gap + cta_line_height
-    )
+    total_text_height = line_height * len(lines) + gap + cta_line_height
 
-    # Ostavljamo prazan prostor pri dnu (Instagram Story kontrole/reply polje)
     bottom_margin = int(height * 0.16)
     band_bottom = height - bottom_margin
     band_top = band_bottom - total_text_height - int(height * 0.05)
     draw.rectangle([(0, band_top), (width, band_bottom)], fill=(0, 0, 0, 175))
 
     y = band_bottom - total_text_height - int(height * 0.02)
-    draw_accent_line(draw, name_line, name_font, y, width)
-    y += name_line_height + gap
-    for line in hook_lines:
-        draw_highlighted_line(draw, line, hook_font, y, width)
-        y += hook_line_height
+    for line in lines:
+        draw_highlighted_line(draw, line, text_font, y, width)
+        y += line_height
 
     y += gap
     draw_accent_line(draw, CTA_TEXT, cta_font, y, width)
 
-    draw_brand_badge(img, draw, width, height, "top-left")
+    draw_brand_badge(canvas, draw, width, height, "top-left")
 
-    img = img.convert("RGB")
+    canvas = canvas.convert("RGB")
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
+    canvas.save(buf, format="JPEG", quality=90)
     return buf.getvalue()
 
 
@@ -497,19 +333,26 @@ def upload_to_cloudinary(image_bytes):
 
 
 def main():
-    profile = pick_profile()
-    log(f"Profil: {profile['name']}, {profile['age']} godina ({profile['gender']})")
+    picked = gdrive_helper.pick_random_story_source()
+    log(f"Slika: {picked['content_type']}/{picked['subtype']}/{picked['file_name']}")
 
-    portrait_url = generate_portrait_with_fallback(profile["prompt_pool"])
-    log(f"Preuzimam portret: {portrait_url}")
-    base_image = http_get_bytes_with_retry(portrait_url)
-    final_image = add_profile_text(base_image, profile)
+    if picked["subtype"] == "kartice":
+        final_image = render_kartica_story(picked["local_path"])
+    else:
+        final_image = render_obicna_slika_story(picked["local_path"])
+
     image_url = upload_to_cloudinary(final_image)
 
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(
-            {"category": profile["gender"], "hook": profile["hook"], "image_url": image_url},
+            {
+                "category": f"{picked['content_type']}/{picked['subtype']}",
+                "image_url": image_url,
+                "gdrive_file_id": picked["file_id"],
+                "gdrive_file_name": picked["file_name"],
+                "gdrive_source_folder_id": picked["source_folder_id"],
+            },
             f,
             ensure_ascii=False,
             indent=2,
