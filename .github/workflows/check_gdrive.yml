@@ -1,0 +1,24 @@
+name: Proveri Google Drive strukturu
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instaliraj Google Drive biblioteke
+        run: pip install google-api-python-client google-auth
+
+      - name: Pokreni dijagnostiku
+        env:
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+        run: python scripts/check_gdrive_structure.py
