@@ -4,24 +4,27 @@ generate_and_host_image.py
 ------------------------------
 1. Uzima SLEDEĆU neiskorišćenu sliku sa Google Drive-a iz foldera
    "Srpskomuvanje/feed/kartice" ili "Srpskomuvanje/feed/obicne slike".
-2. Slika se UVEK uklapa u tačan Instagram format 1080x1350 (format 4:5) -
-   to je MAKSIMALNI portret format koji Instagram prikazuje BEZ da sam
-   dodaje prazan prostor sa strane. Slika se NIKAD ne seče - ako originalne
-   dimenzije ne odgovaraju tačno tom formatu, prazan prostor se popunjava
-   zamućenom uvećanom kopijom iste slike (a ne belom/crnom pozadinom), tako
-   da se uvek vidi CELA slika, i da Instagram nikad sam ne doda svoj prazan
-   prostor sa strane.
+   "Kartice" imaju PRIORITET (gdrive_helper.KARTICE_WEIGHT - 70% šanse) jer
+   su već gotov dizajn i ne treba im nikakva obrada.
+2. Slika se UVEK uklapa u tačan Instagram format 1080x1350 (4:5) - to je
+   format koji Instagramov Graph API zvanično prihvata bez ikakve dodatne
+   obrade (raspon je 4:5 do 1.91:1). Slika se NIKAD ne seče - prazan
+   prostor se popunjava zamućenom uvećanom kopijom iste slike. Finalna
+   slika se dodatno "osigurava" eksplicitnom Cloudinary transformacijom
+   (tačne dimenzije u samom URL-u) da bilo kakva podešavanja Cloudinary
+   upload preset-a ne mogu slučajno da promene format i izazovu prazan
+   prostor sa strane na Instagramu.
 2a. "Kartice" (već gotov dizajn) - samo se uklope u format, BEZ IKAKVOG
-    teksta, logotipa ili bilo čega drugog preko slike. Ostaju potpuno čiste.
-2b. "Obične slike" - dodaje se kratka šokantna "Priznajem: ..." izjava, ali
-    NE veliko i NE po sredini slike - postavlja se u donjem delu slike (ne
-    skroz na dnu, malo iznad), na providnoj crnoj pozadini, beli tekst,
-    istaknute reči u lila-roza boji. Plus mini "srpskomuvanje" bedž u
-    ćošku (minijaturan, ali čitljiv).
+    teksta, logotipa ili bilo čega drugog preko slike. Ostaju potpuno čiste
+    - ovde se ništa ne uređuje, samo se postavljaju.
+2b. "Obične slike" - dodaje se kratka šokantna/"uhvatljiva" izjava (ne
+    veliko, ne po sredini) - u donjem delu slike, na providnoj crnoj
+    pozadini, beli tekst, istaknute reči u lila-roza boji. Mini
+    "srpskomuvanje" bedž (logo + tekst) je pri DNU, na sredini slike -
+    minijaturan, ali čitljiv, van dometa Instagramovih sopstvenih ikonica.
 3. Otpremi finalnu sliku na Cloudinary da dobije javni URL.
-4. Bira generički CTA tekst za Instagram caption (NIKAD u prvom licu, kao
-   da fotografisana osoba priča o aplikaciji - to je uvek samostalan poziv
-   na akciju).
+4. Bira preuveličan/hype CTA tekst za Instagram caption (NIKAD u prvom
+   licu, kao da fotografisana osoba priča o aplikaciji).
 5. Upisuje rezultat u output/post_content.json za publish_feed.py. Taj
    skript, POSLE uspešnog objavljivanja, premešta iskorišćenu sliku u
    "Objavljeno" folder na Drive-u da se nikad ne ponovi.
@@ -48,9 +51,7 @@ MAX_RETRIES = 5
 RETRY_DELAYS = [5, 10, 20, 40]
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-# 4:5 - Instagramov maksimalni portret format. Bilo šta "uže" od ovoga
-# (npr. 3:4) Instagram sam uokviri praznim prostorom sa strane - zato je
-# BITNO da finalna slika bude TAČNO ovih dimenzija.
+# 4:5 - zvanično podržan Instagram Graph API opseg je 4:5 do 1.91:1.
 TARGET_WIDTH = 1080
 TARGET_HEIGHT = 1350
 
@@ -61,6 +62,8 @@ HIGHLIGHT_WORDS = {
     "volim", "verujem", "tražim", "čekam",
     "besplatno", "besplatan", "besplatna",
     "diskretno", "diskretan", "diskretna",
+    "opasna", "opasne", "opasnim",
+    "slobodna",
 }
 
 
@@ -137,10 +140,12 @@ def load_logo():
     return _logo_cache["img"]
 
 
-def draw_mini_badge(img, draw, width, height, corner="top-right"):
-    """Mini brend bedž - logo + 'srpskomuvanje', UVEK u ćošku, potpuno
-    minijaturan, ali i dalje čitljiv. Koristi se SAMO na 'običnim slikama'
-    - kartice ostaju bez ikakvog dodatka."""
+def draw_mini_badge(img, draw, width, height, position="bottom-center"):
+    """Mini brend bedž - logo + 'srpskomuvanje', minijaturan ali čitljiv.
+    Podrazumevano je pri DNU, na sredini slike - namerno NE u ćošku, jer
+    Instagram tamo ume da prikaže sopstvene ikonice (npr. brojač slajdova
+    kod carousela) koje bi ga prekrile. Koristi se SAMO na 'običnim
+    slikama' - kartice ostaju bez ikakvog dodatka."""
     logo = load_logo()
     text = "srpskomuvanje"
     try:
@@ -163,17 +168,19 @@ def draw_mini_badge(img, draw, width, height, corner="top-right"):
     box_w = content_w + pad_x * 2
     box_h = content_h + pad_y * 2
 
-    if corner == "top-left":
+    if position == "bottom-center":
+        left, top = (width - box_w) // 2, height - margin - box_h
+    elif position == "top-left":
         left, top = margin, margin
-    elif corner == "top-right":
+    elif position == "top-right":
         left, top = width - margin - box_w, margin
-    elif corner == "bottom-left":
+    elif position == "bottom-left":
         left, top = margin, height - margin - box_h
     else:  # bottom-right
         left, top = width - margin - box_w, height - margin - box_h
 
     right, bottom = left + box_w, top + box_h
-    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 140))
+    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 150))
 
     cursor_x = left + pad_x
     center_y = (top + bottom) // 2
@@ -189,8 +196,7 @@ def draw_mini_badge(img, draw, width, height, corner="top-right"):
 def fit_within_canvas(img, target_w, target_h):
     """Uklapa CELU sliku (bez sečenja) unutar canvas-a TAČNIH dimenzija
     target_w x target_h. Prazan prostor se popunjava zamućenom uvećanom
-    kopijom iste slike (a ne praznom bojom), tako da Instagram nikad sam
-    ne dodaje svoj prazan prostor sa strane."""
+    kopijom iste slike (a ne praznom bojom)."""
     img = img.convert("RGB")
     src_w, src_h = img.size
 
@@ -217,8 +223,8 @@ def fit_within_canvas(img, target_w, target_h):
 
 def render_kartica(local_path):
     """'Kartice' se SAMO uklapaju u tačan Instagram format (bez sečenja) -
-    BEZ IKAKVOG teksta, logotipa ili bilo čega drugog preko slike. Ostaju
-    potpuno čiste, tačno kako ih je korisnik napravio."""
+    BEZ IKAKVOG teksta, logotipa ili bilo čega drugog preko slike. Ovde se
+    ništa ne uređuje, samo se slika postavlja."""
     img = Image.open(local_path)
     canvas = fit_within_canvas(img, TARGET_WIDTH, TARGET_HEIGHT)
     buf = io.BytesIO()
@@ -249,7 +255,7 @@ def render_obicna_slika(local_path):
     total_text_height = line_height * len(lines)
 
     pad_v = int(height * 0.025)
-    bottom_margin = int(height * 0.09)  # "malo iznad dna" - ne skroz na dnu
+    bottom_margin = int(height * 0.15)  # ostavlja mesta za mini bedž ispod
 
     band_bottom = height - bottom_margin
     band_top = band_bottom - total_text_height - pad_v * 2
@@ -267,7 +273,7 @@ def render_obicna_slika(local_path):
         draw_highlighted_line(draw, line, text_font, y, width)
         y += line_height
 
-    draw_mini_badge(canvas, draw, width, height, "top-right")
+    draw_mini_badge(canvas, draw, width, height, "bottom-center")
 
     canvas = canvas.convert("RGB")
     buf = io.BytesIO()
@@ -328,6 +334,20 @@ def upload_to_cloudinary(image_bytes):
     raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
 
 
+def force_cloudinary_dimensions(url, width, height):
+    """Ubacuje eksplicitnu Cloudinary transformaciju u URL da GARANTUJE
+    tačne finalne dimenzije slike koju Instagram preuzima - bez obzira na
+    podešavanja upload preset-a (koja bi mogla neočekivano da promene
+    format i izazovu prazan prostor sa strane na Instagramu)."""
+    marker = "/upload/"
+    idx = url.find(marker)
+    if idx == -1:
+        return url
+    insert_at = idx + len(marker)
+    transform = f"w_{width},h_{height},c_fit,q_auto/"
+    return url[:insert_at] + transform + url[insert_at:]
+
+
 def main():
     picked = gdrive_helper.pick_random_image(CONTENT_TYPE)
     log(f"Slika: {picked['subtype']}/{picked['file_name']}")
@@ -338,6 +358,7 @@ def main():
         final_image = render_obicna_slika(picked["local_path"])
 
     image_url = upload_to_cloudinary(final_image)
+    image_url = force_cloudinary_dimensions(image_url, TARGET_WIDTH, TARGET_HEIGHT)
     caption = pick_cta_caption()
 
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
