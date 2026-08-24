@@ -242,7 +242,7 @@ def draw_mini_badge(img, draw, width, height, position="bottom-center"):
         left, top = width - margin - box_w, height - margin - box_h
 
     right, bottom = left + box_w, top + box_h
-    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 90))
+    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 130))
 
     cursor_x = left + pad_x
     center_y = (top + bottom) // 2
@@ -340,7 +340,7 @@ def render_obicna_slika_story(local_path):
     draw.rounded_rectangle(
         [(band_left, band_top), (band_right, band_bottom)],
         radius=int(pad_v * 1.2),
-        fill=(0, 0, 0, 90),
+        fill=(0, 0, 0, 130),
     )
 
     y = band_top + pad_v
