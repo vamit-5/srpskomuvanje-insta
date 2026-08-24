@@ -1,0 +1,54 @@
+{
+  "names": {
+    "male": ["Marko", "Nikola", "Stefan", "Aleksandar", "Miloš", "Uroš", "Luka", "Nemanja", "Vladimir", "Filip", "Đorđe", "Igor", "Dušan", "Bojan", "Vuk", "Ognjen", "Petar", "Ivan", "Dejan", "Danilo"],
+    "female": ["Ana", "Milica", "Jovana", "Ivana", "Marija", "Teodora", "Jelena", "Sara", "Tamara", "Katarina", "Nina", "Anđela", "Mila", "Dunja", "Sofija", "Nataša", "Aleksandra", "Kristina", "Bojana", "Vesna"]
+  },
+  "hooks": {
+    "male": [
+      "SAM VEĆ 3 GODINE.",
+      "TRAŽIM NEKOG KO ĆE OSTATI.",
+      "UMORAN OD SWAJPOVANJA U PRAZNO.",
+      "SPREMAN ZA NEŠTO PRAVO.",
+      "ČEKAM DA ME NEKO IZNENADI.",
+      "DOSTA MI JE POVRŠNIH RAZGOVORA.",
+      "TRAŽIM NEKOG IZ MOG GRADA.",
+      "SVI MOJI DRUGOVI SU U VEZI. JA JOŠ ČEKAM.",
+      "SPREMAN DA UPOZNAM PRAVU OSOBU.",
+      "TRAŽIM NEKOG KO RAZUME MOJ HUMOR."
+    ],
+    "female": [
+      "SAMA VEĆ 3 GODINE.",
+      "TRAŽIM NEKOG KO ĆE OSTATI.",
+      "UMORNA OD SWAJPOVANJA U PRAZNO.",
+      "SPREMNA ZA NEŠTO PRAVO.",
+      "ČEKAM DA ME NEKO IZNENADI.",
+      "DOSTA MI JE POVRŠNIH RAZGOVORA.",
+      "TRAŽIM NEKOG IZ MOG GRADA.",
+      "SVE MOJE DRUGARICE SU U VEZI. JA JOŠ ČEKAM.",
+      "SPREMNA DA UPOZNAM PRAVU OSOBU.",
+      "TRAŽIM NEKOG KO RAZUME MOJ HUMOR."
+    ]
+  },
+  "bio_templates": {
+    "male": [
+      "Zovem se {name}, imam {age} godina i iskreno mi je dosta praznih razgovora na aplikacijama. Tražim nekog stvarnog, iz moje blizine. srpskomuvanje.rs - besplatno, diskretno. Link u bio-u 🔥",
+      "{name}, {age} godina. Radim, izlazim, ali nešto mi nedostaje - neko sa kim mogu da budem svoj. Ako si i ti u blizini, javi se preko srpskomuvanje.rs, besplatno je 😏",
+      "Ime mi je {name}, imam {age} godina i umoran sam od čekanja da se nešto samo desi. Zato sam na srpskomuvanje.rs - samo Srbi, samo u blizini. Besplatno, link u bio-u 🔥",
+      "{name} ovde, {age} godina. Ne tražim savršenstvo, samo nekog iskrenog i iz mog grada. srpskomuvanje.rs - besplatno, diskretno. Link u bio-u 😏",
+      "Zovem se {name}, {age} godina, i konačno sam spreman da probam nešto drugačije od klasičnih aplikacija. srpskomuvanje.rs - samo Srbi, samo u blizini. Besplatno 🔥",
+      "{name}, {age}. Volim iskrenost, dobar humor i ljude koji se stvarno pojave. Ako te ovo opisuje, nađi me na srpskomuvanje.rs, besplatno je 👀",
+      "Ime: {name}. Godine: {age}. Tražim nekog ko neće nestati posle dve poruke. srpskomuvanje.rs - besplatno, diskretno, samo Srbi. Link u bio-u 🔥",
+      "{name}, {age} godina, spreman za nešto pravo. Ako si u blizini, javi se preko srpskomuvanje.rs - besplatno je, link u bio-u 😏"
+    ],
+    "female": [
+      "Zovem se {name}, imam {age} godina i iskreno mi je dosta praznih razgovora na aplikacijama. Tražim nekog stvarnog, iz moje blizine. srpskomuvanje.rs - besplatno, diskretno. Link u bio-u 🔥",
+      "{name}, {age} godina. Radim, izlazim, ali nešto mi nedostaje - neko sa kim mogu da budem svoja. Ako si i ti u blizini, javi se preko srpskomuvanje.rs, besplatno je 😏",
+      "Ime mi je {name}, imam {age} godina i umorna sam od čekanja da se nešto samo desi. Zato sam na srpskomuvanje.rs - samo Srbi, samo u blizini. Besplatno, link u bio-u 🔥",
+      "{name} ovde, {age} godina. Ne tražim savršenstvo, samo nekog iskrenog i iz mog grada. srpskomuvanje.rs - besplatno, diskretno. Link u bio-u 😏",
+      "Zovem se {name}, {age} godina, i konačno sam spremna da probam nešto drugačije od klasičnih aplikacija. srpskomuvanje.rs - samo Srbi, samo u blizini. Besplatno 🔥",
+      "{name}, {age}. Volim iskrenost, dobar humor i ljude koji se stvarno pojave. Ako te ovo opisuje, nađi me na srpskomuvanje.rs, besplatno je 👀",
+      "Ime: {name}. Godine: {age}. Tražim nekog ko neće nestati posle dve poruke. srpskomuvanje.rs - besplatno, diskretno, samo Srbi. Link u bio-u 🔥",
+      "{name}, {age} godina, spremna za nešto pravo. Ako si u blizini, javi se preko srpskomuvanje.rs - besplatno je, link u bio-u 😏"
+    ]
+  }
+}
