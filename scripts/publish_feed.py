@@ -9,6 +9,9 @@ Koraci (Instagram Content Publishing API):
 1. POST /{ig-user-id}/media  sa image_url + caption  -> dobijamo container ID
 2. Sačekamo da container bude spreman (proverom statusa)
 3. POST /{ig-user-id}/media_publish sa creation_id=container_id
+
+Posle uspešnog objavljivanja, premeštamo iskorišćenu sliku na Google
+Drive-u u "Objavljeno" folder (da se nikad ne ponovi ista slika).
 """
 
 import json
@@ -18,6 +21,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import gdrive_helper
 
 MAX_RETRIES = 5
 RETRY_DELAYS = [5, 10, 20, 40]
@@ -102,6 +107,25 @@ def wait_until_ready(container_id, token):
     raise RuntimeError("Container nije postao spreman u razumnom vremenu.")
 
 
+def archive_used_image(content):
+    """Premesti iskorišćenu sliku u Objavljeno na Drive-u. Ako ovo ne
+    uspe, ne rušimo ceo posao (post je već objavljen) - samo upozorimo."""
+    required = ("gdrive_file_id", "gdrive_source_folder_id")
+    if not all(k in content for k in required):
+        log("UPOZORENJE: nema Google Drive podataka u post_content.json, preskačem arhiviranje.")
+        return
+    try:
+        gdrive_helper.archive_image(
+            {
+                "file_id": content["gdrive_file_id"],
+                "file_name": content.get("gdrive_file_name"),
+                "source_folder_id": content["gdrive_source_folder_id"],
+            }
+        )
+    except Exception as e:
+        log(f"UPOZORENJE: nisam uspeo da arhiviram sliku na Drive-u ({e}). Post je ipak objavljen.")
+
+
 def main():
     ig_user_id = os.environ.get("IG_USER_ID", "").strip()
     if not ig_user_id:
@@ -138,6 +162,8 @@ def main():
         raise RuntimeError(f"Neočekivan odgovor pri objavljivanju: {publish_result}")
 
     log(f"USPEŠNO OBJAVLJENO! Media ID: {publish_result['id']}")
+
+    archive_used_image(content)
 
 
 if __name__ == "__main__":
