@@ -403,7 +403,6 @@ def upload_to_cloudinary(image_bytes):
     content_type = f"multipart/form-data; boundary={boundary}"
 
     log("Otpremam sliku na Cloudinary...")
-    data = http_post_json_with_retry.__wrapped__ if False else None  # noqa: unused, keep imports simple
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Content-Type", content_type)
     last_error = None
