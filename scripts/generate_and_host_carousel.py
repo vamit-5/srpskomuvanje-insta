@@ -341,7 +341,7 @@ def draw_mini_badge(img, draw, width, height, position="bottom-center"):
         left, top = width - margin - box_w, height - margin - box_h
 
     right, bottom = left + box_w, top + box_h
-    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 150))
+    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 75))
 
     cursor_x = left + pad_x
     center_y = (top + bottom) // 2
