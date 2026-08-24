@@ -25,17 +25,17 @@ jobs:
       - name: Instaliraj font (DejaVu, podržava č/ć/š/ž/đ)
         run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core
 
-      - name: Instaliraj Pillow
-        run: pip install Pillow
+      - name: Instaliraj Pillow i Google Drive biblioteke
+        run: pip install Pillow google-api-python-client google-auth google-auth-httplib2
 
-      - name: Proveri da li je ciljani termin za Feed (9, 12, 15, 18, 21h po srpskom vremenu) - ručno pokretanje uvek prolazi
+      - name: Proveri da li je ciljani termin za Feed (10x dnevno po srpskom vremenu) - ručno pokretanje uvek prolazi
         id: time_check
         run: |
           python -c "
           from zoneinfo import ZoneInfo
           from datetime import datetime
           import os
-          TARGET_HOURS = [9, 12, 15, 18, 21]
+          TARGET_HOURS = [7, 9, 10, 12, 13, 15, 16, 18, 20, 22]
           event_name = os.environ.get('GITHUB_EVENT_NAME', '')
           if event_name == 'workflow_dispatch':
               ok = True
@@ -65,14 +65,14 @@ jobs:
         env:
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
-          HF_API_KEY_ID: ${{ secrets.HF_API_KEY_ID }}
-          HF_API_KEY_SECRET: ${{ secrets.HF_API_KEY_SECRET }}
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
         run: python scripts/generate_and_host_image.py
 
       - name: Objavi na Instagram
         if: steps.lock.outputs.acquired == 'true' && steps.quota.outputs.ok == 'true'
         env:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
         run: python scripts/publish_feed.py
 
       - name: Otključaj katanac
