@@ -62,6 +62,13 @@ MIN_SLIDES = 4
 MAX_SLIDES = 7
 REPEAT_SAME_IMAGE_CHANCE = 0.5  # samo za "obične slike"
 
+# Šansa da se za "obične slike" carousel iskoristi novi "hook" par
+# (statistika o Srbiji) na jednom od slajdova - kod "hook" para su
+# tekst na tom slajdu i CELI caption carousela MEĐUSOBNO POVEZANI (prva
+# rečenica je na slici, ostatak ide u opis). Inače se slajdovi i caption
+# biraju nezavisno kao i do sada.
+HOOK_CHANCE = 0.5
+
 ACCENT_COLOR = (224, 102, 255, 255)  # lila-roza, za istaknute reči
 
 HIGHLIGHT_WORDS = {
@@ -139,6 +146,41 @@ def pick_cta_caption():
     with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
     return random.choice(data["cta_captions"])
+
+
+def pick_confessions_and_caption(k):
+    """Bira k tekstova za slajdove (poslednji je UVEK poseban 'pridruži se
+    besplatno' poziv) PLUS caption za ceo carousel. Sa HOOK_CHANCE
+    verovatnoćom, JEDAN od običnih slajdova koristi tekst iz novog 'hooks'
+    para (statistika o Srbiji), a caption celog carousela je VEZAN za TAJ
+    ISTI hook (prva rečenica na slici, ostatak u opisu). Inače se slajdovi
+    i caption biraju nezavisno kao i do sada."""
+    with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    pool = list(data["confessions"])
+    closing_pool = list(data["closing_slide_texts"])
+    hooks = data.get("hooks", [])
+
+    regular_needed = k - 1
+    if regular_needed <= len(pool):
+        regular = random.sample(pool, regular_needed)
+    else:
+        regular = list(pool)
+        random.shuffle(regular)
+        while len(regular) < regular_needed:
+            regular.append(random.choice(pool))
+        regular = regular[:regular_needed]
+
+    if hooks and regular_needed >= 1 and random.random() < HOOK_CHANCE:
+        hook = random.choice(hooks)
+        slot = random.randrange(regular_needed)
+        regular[slot] = hook["overlay"]
+        caption = hook["caption"]
+    else:
+        caption = random.choice(data["cta_captions"])
+
+    closing = random.choice(closing_pool)
+    return regular + [closing], caption
 
 
 def normalize_word(word):
@@ -410,8 +452,9 @@ def main():
 
     if subtype == "kartice":
         texts_for_slides = [None] * len(picks)
+        caption = pick_cta_caption()
     else:
-        texts_for_slides = pick_confessions(len(picks))
+        texts_for_slides, caption = pick_confessions_and_caption(len(picks))
 
     image_urls = []
     gdrive_items = []
@@ -431,7 +474,6 @@ def main():
             }
         )
 
-    caption = pick_cta_caption()
     title = f"{CONTENT_TYPE}/{subtype}"
 
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
