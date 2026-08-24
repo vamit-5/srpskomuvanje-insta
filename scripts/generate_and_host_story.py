@@ -5,13 +5,15 @@ generate_and_host_story.py
 1. Uzima SLEDEĆU neiskorišćenu sliku sa Google Drive-a, MEŠANO iz bilo kog
    od sva 4 foldera: "Srpskomuvanje/feed/kartice", "feed/obicne slike",
    "carousels/kartice", "carousels/obicne slike" - koji god ima slika.
-2a. Ako je slika "kartica" (već gotov dizajn) - slika se NE SEČE i NE
-    UKLAPA, ostaje u originalnim dimenzijama; dodaje joj se SAMO mala CTA
-    linija i logo pri dnu (Instagram Stories nemaju caption, pa CTA MORA
-    biti na samoj slici).
-2b. Ako je "obična slika" - uklapa se CELA (bez sečenja) u format Instagram
-    Story-ja (1080x1920), sa zamućenom pozadinom da popuni prazan prostor,
-    i dodaje se kratka "Priznajem: ..." izjava + CTA linija + logo.
+2. Slika se UVEK uklapa u tačan Instagram Story format 1080x1920 (9:16),
+   BEZ sečenja - prazan prostor se popunjava zamućenom uvećanom kopijom
+   iste slike.
+2a. Ako je slika "kartica" (već gotov dizajn) - NIŠTA se ne dodaje preko
+    slike (bez teksta, bez CTA, bez logotipa). Samo se uklopi u format.
+2b. Ako je "obična slika" - dodaje se kratka "Priznajem: ..." izjava (u
+    donjem delu slike, ne po sredini, ne skroz na dnu) + CTA linija + mini
+    brend bedž, pošto Instagram Stories nemaju caption pa CTA MORA biti na
+    samoj slici.
 3. Otpremi finalnu sliku na Cloudinary da dobije javni URL.
 4. Upisuje rezultat (image_url i podatke o slici sa Drive-a) u
    output/story_content.json za publish_story.py. Taj skript, POSLE
@@ -19,7 +21,8 @@ generate_and_host_story.py
    folder na Drive-u da se nikad ne ponovi.
 
 NAPOMENA: Instagram Content Publishing API ne podržava caption za Stories,
-zato se sav tekst (uključujući CTA) ispisuje direktno na sliku.
+zato se sav tekst (uključujući CTA) ispisuje direktno na sliku - ali SAMO
+za "obične slike". "Kartice" ostaju potpuno čiste u svim formatima.
 """
 
 import io
@@ -45,7 +48,7 @@ TARGET_WIDTH = 1080
 TARGET_HEIGHT = 1920
 CTA_TEXT = "SRPSKOMUVANJE.RS - LINK U BIO-U"
 
-ACCENT_COLOR = (191, 64, 255, 255)
+ACCENT_COLOR = (224, 102, 255, 255)  # lila-roza, za istaknute reči
 
 HIGHLIGHT_WORDS = {
     "priznajem",
@@ -131,19 +134,22 @@ def load_logo():
     return _logo_cache["img"]
 
 
-def draw_brand_badge(img, draw, width, height, corner="top-left"):
+def draw_mini_badge(img, draw, width, height, corner="top-right"):
+    """Mini brend bedž - logo + 'srpskomuvanje', UVEK u ćošku, potpuno
+    minijaturan, ali čitljiv. Koristi se SAMO na 'običnim slikama' -
+    kartice ostaju bez ikakvog dodatka."""
     logo = load_logo()
     text = "srpskomuvanje"
     try:
-        badge_font = ImageFont.truetype(FONT_PATH, int(width * 0.042))
+        badge_font = ImageFont.truetype(FONT_PATH, max(14, int(width * 0.024)))
     except OSError:
         badge_font = ImageFont.load_default()
 
-    icon_size = int(width * 0.11)
-    gap = int(width * 0.02)
-    pad_x = int(width * 0.025)
-    pad_y = int(width * 0.018)
-    margin = int(width * 0.045)
+    icon_size = max(16, int(width * 0.05))
+    gap = int(width * 0.01)
+    pad_x = int(width * 0.014)
+    pad_y = int(width * 0.009)
+    margin = int(width * 0.03)
 
     bbox = draw.textbbox((0, 0), text, font=badge_font)
     text_w = bbox[2] - bbox[0]
@@ -164,7 +170,7 @@ def draw_brand_badge(img, draw, width, height, corner="top-left"):
         left, top = width - margin - box_w, height - margin - box_h
 
     right, bottom = left + box_w, top + box_h
-    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.3), fill=(0, 0, 0, 145))
+    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 140))
 
     cursor_x = left + pad_x
     center_y = (top + bottom) // 2
@@ -205,29 +211,13 @@ def fit_within_canvas(img, target_w, target_h):
 
 
 def render_kartica_story(local_path):
-    """'Kartice' se NE SEKU niti uklapaju - ostaju u originalnim
-    dimenzijama. Dodaje se SAMO mala CTA linija + logo pri dnu, jer
-    Instagram Stories nemaju poseban caption."""
-    img = Image.open(local_path).convert("RGB")
-    width, height = img.size
-    img = img.convert("RGBA")
-    draw = ImageDraw.Draw(img, "RGBA")
-
-    try:
-        cta_font = ImageFont.truetype(FONT_PATH, int(width * 0.045))
-    except OSError:
-        cta_font = ImageFont.load_default()
-
-    cta_line_height = int(cta_font.size * 1.4) if hasattr(cta_font, "size") else 24
-    band_top = height - cta_line_height - int(height * 0.05)
-    draw.rectangle([(0, band_top), (width, height)], fill=(0, 0, 0, 150))
-    draw_accent_line(draw, CTA_TEXT, cta_font, height - cta_line_height - int(height * 0.02), width)
-
-    draw_brand_badge(img, draw, width, height, "top-left")
-
-    img = img.convert("RGB")
+    """'Kartice' se SAMO uklapaju u Story format (bez sečenja) - potpuno
+    BEZ teksta, CTA linije ili logotipa. Ostaju čiste, tačno kako ih je
+    korisnik napravio."""
+    img = Image.open(local_path)
+    canvas = fit_within_canvas(img, TARGET_WIDTH, TARGET_HEIGHT)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=95)
+    canvas.save(buf, format="JPEG", quality=95)
     return buf.getvalue()
 
 
@@ -241,29 +231,38 @@ def render_obicna_slika_story(local_path):
     confession = pick_confession()
 
     try:
-        text_font = ImageFont.truetype(FONT_PATH, int(width * 0.075))
-        cta_font = ImageFont.truetype(FONT_PATH, int(width * 0.042))
+        text_font = ImageFont.truetype(FONT_PATH, int(width * 0.062))
+        cta_font = ImageFont.truetype(FONT_PATH, int(width * 0.038))
     except OSError:
         log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
         text_font = ImageFont.load_default()
         cta_font = ImageFont.load_default()
 
     text_upper = confession.upper()
-    max_width = int(width * 0.85)
+    max_width = int(width * 0.78)
     lines = wrap_text(draw, text_upper, text_font, max_width)
 
-    line_height = int(text_font.size * 1.15) if hasattr(text_font, "size") else 28
+    line_height = int(text_font.size * 1.18) if hasattr(text_font, "size") else 26
     cta_line_height = int(cta_font.size * 1.3) if hasattr(cta_font, "size") else 20
-    gap = int(height * 0.02)
+    gap = int(height * 0.018)
 
     total_text_height = line_height * len(lines) + gap + cta_line_height
 
-    bottom_margin = int(height * 0.16)
-    band_bottom = height - bottom_margin
-    band_top = band_bottom - total_text_height - int(height * 0.05)
-    draw.rectangle([(0, band_top), (width, band_bottom)], fill=(0, 0, 0, 175))
+    pad_v = int(height * 0.022)
+    bottom_margin = int(height * 0.1)  # "malo iznad dna" - ne skroz na dnu
 
-    y = band_bottom - total_text_height - int(height * 0.02)
+    band_bottom = height - bottom_margin
+    band_top = band_bottom - total_text_height - pad_v * 2
+    band_left = int(width * 0.06)
+    band_right = width - band_left
+
+    draw.rounded_rectangle(
+        [(band_left, band_top), (band_right, band_bottom)],
+        radius=int(pad_v * 1.2),
+        fill=(0, 0, 0, 165),
+    )
+
+    y = band_top + pad_v
     for line in lines:
         draw_highlighted_line(draw, line, text_font, y, width)
         y += line_height
@@ -271,7 +270,7 @@ def render_obicna_slika_story(local_path):
     y += gap
     draw_accent_line(draw, CTA_TEXT, cta_font, y, width)
 
-    draw_brand_badge(canvas, draw, width, height, "top-left")
+    draw_mini_badge(canvas, draw, width, height, "top-right")
 
     canvas = canvas.convert("RGB")
     buf = io.BytesIO()
