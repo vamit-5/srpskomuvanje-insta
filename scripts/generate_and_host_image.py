@@ -65,16 +65,16 @@ HIGHLIGHT_WORDS = {
 # editorijalni stil, autentično, ne generički AI izgled.
 HIGGSFIELD_PROMPTS = {
     "male": [
-        "Editorial portrait of a young Serbian man in his late 20s, natural daylight, candid confident expression, casual streetwear, authentic skin texture, Balkan features, shot on 50mm lens, photorealistic",
-        "Editorial portrait of an attractive Serbian man, warm evening light, slight smile, short beard, casual jacket, natural skin texture, candid not posed, photorealistic",
-        "Editorial portrait of a handsome Serbian man in a cozy cafe, soft window light, genuine smile, Balkan features, natural skin texture, photorealistic, amateur candid feel",
-        "Editorial portrait of a young Serbian man outdoors at golden hour, relaxed pose, natural skin texture, Balkan features, photorealistic, candid expression",
+        "Candid amateur smartphone selfie of an average Serbian man in his late 20s, taken with a phone front camera in a dimly lit apartment, slightly imperfect framing and focus, unretouched skin with visible pores and minor imperfections, ordinary everyday clothing, Balkan Slavic features, unposed genuine expression, realistic amateur photo, not professionally shot, no filter, no retouching",
+        "Casual iPhone photo of a Serbian man taken by a friend at a kafana or bar, natural warm indoor lighting, slightly grainy low-light phone camera quality, real visible skin texture, average build, Balkan features, unposed candid moment, everyday casual clothes, not model-like, authentic amateur snapshot",
+        "Real candid phone photo of an ordinary Serbian man standing outside on a street in his neighborhood, overcast daylight, slightly imperfect composition and framing, natural unretouched skin, Balkan Slavic features, plain ordinary clothing, genuine unposed expression, realistic amateur snapshot, not professionally shot, no makeup filter",
+        "Amateur mirror selfie of a Serbian man in a bedroom, phone camera flash, slightly harsh uneven lighting typical of a real selfie, visible skin texture and minor imperfections, Balkan features, casual homewear, unposed, authentic, not polished or edited, imperfect real person",
     ],
     "female": [
-        "Editorial portrait of a young Serbian woman in her late 20s, natural daylight, soft candid smile, casual stylish outfit, authentic skin texture, Balkan features, shot on 50mm lens, photorealistic",
-        "Editorial portrait of an attractive Serbian woman, warm evening light, gentle expression, natural makeup, Balkan features, natural skin texture, candid not posed, photorealistic",
-        "Editorial portrait of a beautiful Serbian woman in a cozy cafe, soft window light, genuine smile, Balkan features, natural skin texture, photorealistic, amateur candid feel",
-        "Editorial portrait of a young Serbian woman outdoors at golden hour, relaxed pose, natural skin texture, Balkan features, photorealistic, candid expression",
+        "Candid amateur smartphone selfie of an average Serbian woman in her late 20s, taken with a phone front camera in a dimly lit apartment, slightly imperfect framing and focus, unretouched skin with visible pores and minor imperfections, ordinary everyday clothing, little to no makeup, Balkan Slavic features, unposed genuine expression, realistic amateur photo, not professionally shot, no filter, no retouching",
+        "Casual iPhone photo of a Serbian woman taken by a friend at a cafe or bar, natural warm indoor lighting, slightly grainy low-light phone camera quality, real visible skin texture, Balkan features, unposed candid moment, everyday casual clothes, not model-like, authentic amateur snapshot",
+        "Real candid phone photo of an ordinary Serbian woman standing outside on a street in her neighborhood, overcast daylight, slightly imperfect composition and framing, natural unretouched skin, minimal makeup, Balkan Slavic features, plain ordinary clothing, genuine unposed expression, realistic amateur snapshot, not professionally shot",
+        "Amateur mirror selfie of a Serbian woman in a bedroom, phone camera flash, slightly harsh uneven lighting typical of a real selfie, visible skin texture and minor imperfections, Balkan features, casual homewear, unposed, authentic, not polished or edited, imperfect real person",
     ],
 }
 
