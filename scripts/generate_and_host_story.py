@@ -39,6 +39,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 PROFILES_FILE = "content/profiles.json"
 OUTPUT_FILE = "output/story_content.json"
+LOGO_PATH = "logo.png"
 MAX_RETRIES = 5
 RETRY_DELAYS = [5, 10, 20, 40]
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -72,16 +73,16 @@ HIGHLIGHT_WORDS = {
 # editorijalni stil, autentično, ne generički AI izgled.
 HIGGSFIELD_PROMPTS = {
     "male": [
-        "Candid amateur smartphone selfie of an average Serbian man in his late 20s, taken with a phone front camera in a dimly lit apartment, slightly imperfect framing and focus, unretouched skin with visible pores and minor imperfections, ordinary everyday clothing, Balkan Slavic features, unposed genuine expression, realistic amateur photo, not professionally shot, no filter, no retouching",
-        "Casual iPhone photo of a Serbian man taken by a friend at a kafana or bar, natural warm indoor lighting, slightly grainy low-light phone camera quality, real visible skin texture, average build, Balkan features, unposed candid moment, everyday casual clothes, not model-like, authentic amateur snapshot",
-        "Real candid phone photo of an ordinary Serbian man standing outside on a street in his neighborhood, overcast daylight, slightly imperfect composition and framing, natural unretouched skin, Balkan Slavic features, plain ordinary clothing, genuine unposed expression, realistic amateur snapshot, not professionally shot, no makeup filter",
-        "Amateur mirror selfie of a Serbian man in a bedroom, phone camera flash, slightly harsh uneven lighting typical of a real selfie, visible skin texture and minor imperfections, Balkan features, casual homewear, unposed, authentic, not polished or edited, imperfect real person",
+        "Candid amateur smartphone selfie of an ordinary Serbian man in his late 20s, taken with a phone front camera in a dimly lit apartment, slightly imperfect framing and focus, unretouched skin with visible pores and minor imperfections, ordinary everyday clothing, typical Balkan Slavic features, unposed genuine expression, realistic amateur photo, not professionally shot, no filter, no retouching",
+        "Casual candid phone photo of an extremely handsome, tall, muscular Serbian man with an athletic build, taken by a friend at a kafana or bar, natural warm indoor lighting, slightly grainy low-light phone camera quality, real visible skin texture, typical Serbian features, unposed candid moment, casual clothes, authentic amateur snapshot, not a professional photoshoot",
+        "Real candid phone photo of an ordinary Serbian man standing outside on a street in his neighborhood, overcast daylight, slightly imperfect composition and framing, natural unretouched skin, typical Balkan Slavic features, plain ordinary clothing, genuine unposed expression, realistic amateur snapshot, not professionally shot",
+        "Amateur mirror selfie of an extremely attractive tall muscular Serbian man with an athletic build, casual gym or streetwear clothing, phone camera flash, slightly harsh uneven lighting typical of a real selfie, visible skin texture, typical Serbian features, unposed, authentic, not polished or edited",
     ],
     "female": [
-        "Candid amateur smartphone selfie of an average Serbian woman in her late 20s, taken with a phone front camera in a dimly lit apartment, slightly imperfect framing and focus, unretouched skin with visible pores and minor imperfections, ordinary everyday clothing, little to no makeup, Balkan Slavic features, unposed genuine expression, realistic amateur photo, not professionally shot, no filter, no retouching",
-        "Casual iPhone photo of a Serbian woman taken by a friend at a cafe or bar, natural warm indoor lighting, slightly grainy low-light phone camera quality, real visible skin texture, Balkan features, unposed candid moment, everyday casual clothes, not model-like, authentic amateur snapshot",
-        "Real candid phone photo of an ordinary Serbian woman standing outside on a street in her neighborhood, overcast daylight, slightly imperfect composition and framing, natural unretouched skin, minimal makeup, Balkan Slavic features, plain ordinary clothing, genuine unposed expression, realistic amateur snapshot, not professionally shot",
-        "Amateur mirror selfie of a Serbian woman in a bedroom, phone camera flash, slightly harsh uneven lighting typical of a real selfie, visible skin texture and minor imperfections, Balkan features, casual homewear, unposed, authentic, not polished or edited, imperfect real person",
+        "Candid amateur smartphone selfie of an ordinary Serbian woman in her late 20s, taken with a phone front camera in a dimly lit apartment, slightly imperfect framing and focus, unretouched skin with visible pores and minor imperfections, ordinary everyday clothing, little to no makeup, typical Balkan Slavic features, unposed genuine expression, realistic amateur photo, not professionally shot, no filter, no retouching",
+        "Casual candid phone photo of an extremely attractive Serbian woman, taken by a friend at a cafe or bar, natural warm indoor lighting, slightly grainy low-light phone camera quality, real visible skin texture, typical Serbian features, unposed candid moment, stylish casual outfit, authentic amateur snapshot, not a professional photoshoot",
+        "Real candid phone photo of an ordinary Serbian woman standing outside on a street in her neighborhood, overcast daylight, slightly imperfect composition and framing, natural unretouched skin, minimal makeup, typical Balkan Slavic features, plain ordinary clothing, genuine unposed expression, realistic amateur snapshot, not professionally shot",
+        "Amateur mirror selfie of an extremely attractive Serbian woman, stylish casual outfit, phone camera flash, slightly harsh uneven lighting typical of a real selfie, visible skin texture, typical Serbian features, unposed, authentic, not polished or edited",
     ],
 }
 
@@ -321,14 +322,77 @@ def draw_accent_line(draw, line, font, y, canvas_width):
     draw.text((x, y), line, font=font, fill=ACCENT_COLOR)
 
 
+_logo_cache = {}
+
+
+def load_logo():
+    if "img" not in _logo_cache:
+        try:
+            _logo_cache["img"] = Image.open(LOGO_PATH).convert("RGBA")
+        except (FileNotFoundError, OSError):
+            log(f"UPOZORENJE: {LOGO_PATH} nije nađen, crtam samo tekst bez loga.")
+            _logo_cache["img"] = None
+    return _logo_cache["img"]
+
+
+def draw_brand_badge(img, draw, width, height, corner="top-left"):
+    """Crta logo (logo.png, providna pozadina) + tekst 'srpskomuvanje'
+    u ćošku Story slike, na providnoj tamnoj pločici radi čitljivosti (slika
+    više nije zatamnjena preko cele površine, pa treba lokalni kontrast)."""
+    logo = load_logo()
+    text = "srpskomuvanje"
+    try:
+        badge_font = ImageFont.truetype(FONT_PATH, int(width * 0.042))
+    except OSError:
+        badge_font = ImageFont.load_default()
+
+    icon_size = int(width * 0.11)
+    gap = int(width * 0.02)
+    pad_x = int(width * 0.025)
+    pad_y = int(width * 0.018)
+    margin = int(width * 0.045)
+
+    bbox = draw.textbbox((0, 0), text, font=badge_font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    content_w = (icon_size + gap if logo else 0) + text_w
+    content_h = max(icon_size if logo else 0, text_h)
+    box_w = content_w + pad_x * 2
+    box_h = content_h + pad_y * 2
+
+    if corner == "top-left":
+        left, top = margin, margin
+    elif corner == "top-right":
+        left, top = width - margin - box_w, margin
+    elif corner == "bottom-left":
+        left, top = margin, height - margin - box_h
+    else:  # bottom-right
+        left, top = width - margin - box_w, height - margin - box_h
+
+    right, bottom = left + box_w, top + box_h
+    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.3), fill=(0, 0, 0, 145))
+
+    cursor_x = left + pad_x
+    center_y = (top + bottom) // 2
+
+    if logo:
+        logo_resized = logo.resize((icon_size, icon_size), Image.LANCZOS)
+        img.paste(logo_resized, (cursor_x, center_y - icon_size // 2), logo_resized)
+        cursor_x += icon_size + gap
+
+    draw.text((cursor_x, center_y - text_h // 2 - bbox[1]), text, font=badge_font, fill=(255, 255, 255, 255))
+
+
 def add_profile_text(image_bytes, profile):
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = crop_to_fill(img, TARGET_WIDTH, TARGET_HEIGHT)
     width, height = img.size
 
+    # Slika ostaje SVETLA i jasna - bez zatamnjenja preko cele slike.
+    # Čitljivost teksta obezbeđuje samo tamna traka lokalno iza teksta
+    # (ispod, gde se ispisuje ime/tekst), ne cela fotografija.
     img = img.convert("RGBA")
-    dark_overlay = Image.new("RGBA", img.size, (0, 0, 0, 100))
-    img = Image.alpha_composite(img, dark_overlay)
     draw = ImageDraw.Draw(img, "RGBA")
 
     try:
@@ -370,6 +434,8 @@ def add_profile_text(image_bytes, profile):
 
     y += gap
     draw_accent_line(draw, CTA_TEXT, cta_font, y, width)
+
+    draw_brand_badge(img, draw, width, height, "top-left")
 
     img = img.convert("RGB")
     buf = io.BytesIO()
