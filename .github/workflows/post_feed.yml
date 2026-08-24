@@ -65,12 +65,9 @@ jobs:
         env:
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-        run: |
-          CATEGORIES=("cta" "humor_citati" "relatable")
-          RANDOM_CATEGORY=${CATEGORIES[$RANDOM % ${#CATEGORIES[@]}]}
-          echo "Izabrana kategorija: $RANDOM_CATEGORY"
-          python scripts/generate_and_host_image.py "$RANDOM_CATEGORY"
+          HF_API_KEY_ID: ${{ secrets.HF_API_KEY_ID }}
+          HF_API_KEY_SECRET: ${{ secrets.HF_API_KEY_SECRET }}
+        run: python scripts/generate_and_host_image.py
 
       - name: Objavi na Instagram
         if: steps.lock.outputs.acquired == 'true' && steps.quota.outputs.ok == 'true'
