@@ -57,6 +57,12 @@ TARGET_HEIGHT = 1350
 
 ACCENT_COLOR = (224, 102, 255, 255)  # lila-roza, za istaknute reči
 
+# Šansa da se za "običnu sliku" iskoristi novi "hook" par (statistika o
+# Srbiji) umesto stare kombinacije - kod "hook" para su tekst na slici i
+# opis (caption) MEĐUSOBNO POVEZANI (prva rečenica je na slici, ostatak
+# ide u opis), dok kod stare kombinacije to biramo nezavisno.
+HOOK_CHANCE = 0.5
+
 HIGHLIGHT_WORDS = {
     "priznajem",
     "volim", "verujem", "tražim", "čekam",
@@ -81,6 +87,26 @@ def pick_cta_caption():
     with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
     return random.choice(data["cta_captions"])
+
+
+def pick_overlay_and_caption():
+    """Bira tekst za sliku i tekst za opis (caption) za 'običnu sliku'.
+    Sa HOOK_CHANCE verovatnoćom bira novi 'hook' par iz 'hooks' liste
+    (statistika o Srbiji) - tu su tekst na slici i opis MEĐUSOBNO
+    POVEZANI (prva rečenica ide na sliku, ostatak ide u opis). Inače
+    koristi staru kombinaciju: nasumična 'confession' rečenica na slici
+    + nezavisan CTA opis."""
+    with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    hooks = data.get("hooks", [])
+    if hooks and random.random() < HOOK_CHANCE:
+        hook = random.choice(hooks)
+        return hook["overlay"], hook["caption"]
+
+    overlay = random.choice(data["confessions"])
+    caption = random.choice(data["cta_captions"])
+    return overlay, caption
 
 
 def normalize_word(word):
@@ -232,14 +258,12 @@ def render_kartica(local_path):
     return buf.getvalue()
 
 
-def render_obicna_slika(local_path):
+def render_obicna_slika(local_path, confession):
     img = Image.open(local_path)
     canvas = fit_within_canvas(img, TARGET_WIDTH, TARGET_HEIGHT)
     width, height = canvas.size
     canvas = canvas.convert("RGBA")
     draw = ImageDraw.Draw(canvas, "RGBA")
-
-    confession = pick_confession()
 
     try:
         text_font = ImageFont.truetype(FONT_PATH, int(width * 0.062))
@@ -354,12 +378,13 @@ def main():
 
     if picked["subtype"] == "kartice":
         final_image = render_kartica(picked["local_path"])
+        caption = pick_cta_caption()
     else:
-        final_image = render_obicna_slika(picked["local_path"])
+        overlay_text, caption = pick_overlay_and_caption()
+        final_image = render_obicna_slika(picked["local_path"], overlay_text)
 
     image_url = upload_to_cloudinary(final_image)
     image_url = force_cloudinary_dimensions(image_url, TARGET_WIDTH, TARGET_HEIGHT)
-    caption = pick_cta_caption()
 
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
