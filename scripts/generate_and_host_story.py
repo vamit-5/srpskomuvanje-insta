@@ -4,17 +4,23 @@ generate_and_host_story.py
 -----------------------------
 1. Uzima SLEDEĆU neiskorišćenu sliku sa Google Drive-a, MEŠANO iz bilo kog
    od sva 4 foldera: "Srpskomuvanje/feed/kartice", "feed/obicne slike",
-   "carousels/kartice", "carousels/obicne slike" - koji god ima slika.
+   "carousels/kartice", "carousels/obicne slike". "Kartice" imaju
+   PRIORITET (gdrive_helper.KARTICE_WEIGHT - 70% šanse) jer su već gotov
+   dizajn i ne treba im nikakva obrada.
 2. Slika se UVEK uklapa u tačan Instagram Story format 1080x1920 (9:16),
    BEZ sečenja - prazan prostor se popunjava zamućenom uvećanom kopijom
    iste slike.
 2a. Ako je slika "kartica" (već gotov dizajn) - NIŠTA se ne dodaje preko
-    slike (bez teksta, bez CTA, bez logotipa). Samo se uklopi u format.
-2b. Ako je "obična slika" - dodaje se kratka "Priznajem: ..." izjava (u
-    donjem delu slike, ne po sredini, ne skroz na dnu) + CTA linija + mini
-    brend bedž, pošto Instagram Stories nemaju caption pa CTA MORA biti na
-    samoj slici.
-3. Otpremi finalnu sliku na Cloudinary da dobije javni URL.
+    slike (bez teksta, bez CTA, bez logotipa). Samo se uklopi u format -
+    ovde se ništa ne uređuje, samo se postavlja.
+2b. Ako je "obična slika" - dodaje se kratka šokantna/"uhvatljiva" izjava
+    (u donjem delu slike, ne po sredini, ne skroz na dnu) + CTA linija +
+    mini brend bedž pri dnu na sredini, pošto Instagram Stories nemaju
+    caption pa CTA MORA biti na samoj slici.
+3. Otpremi finalnu sliku na Cloudinary da dobije javni URL. URL se
+   dodatno "osigurava" eksplicitnom Cloudinary transformacijom (tačne
+   dimenzije u URL-u) da bilo kakva podešavanja upload preset-a ne mogu
+   slučajno da promene format.
 4. Upisuje rezultat (image_url i podatke o slici sa Drive-a) u
    output/story_content.json za publish_story.py. Taj skript, POSLE
    uspešnog objavljivanja, premešta iskorišćenu sliku u "Objavljeno"
@@ -55,6 +61,8 @@ HIGHLIGHT_WORDS = {
     "volim", "verujem", "tražim", "čekam",
     "besplatno", "besplatan", "besplatna",
     "diskretno", "diskretan", "diskretna",
+    "opasna", "opasne", "opasnim",
+    "slobodna",
 }
 
 
@@ -134,10 +142,10 @@ def load_logo():
     return _logo_cache["img"]
 
 
-def draw_mini_badge(img, draw, width, height, corner="top-right"):
-    """Mini brend bedž - logo + 'srpskomuvanje', UVEK u ćošku, potpuno
-    minijaturan, ali čitljiv. Koristi se SAMO na 'običnim slikama' -
-    kartice ostaju bez ikakvog dodatka."""
+def draw_mini_badge(img, draw, width, height, position="bottom-center"):
+    """Mini brend bedž - logo + 'srpskomuvanje', minijaturan ali čitljiv.
+    Podrazumevano je pri DNU, na sredini slike. Koristi se SAMO na
+    'običnim slikama' - kartice ostaju bez ikakvog dodatka."""
     logo = load_logo()
     text = "srpskomuvanje"
     try:
@@ -160,17 +168,19 @@ def draw_mini_badge(img, draw, width, height, corner="top-right"):
     box_w = content_w + pad_x * 2
     box_h = content_h + pad_y * 2
 
-    if corner == "top-left":
+    if position == "bottom-center":
+        left, top = (width - box_w) // 2, height - margin - box_h
+    elif position == "top-left":
         left, top = margin, margin
-    elif corner == "top-right":
+    elif position == "top-right":
         left, top = width - margin - box_w, margin
-    elif corner == "bottom-left":
+    elif position == "bottom-left":
         left, top = margin, height - margin - box_h
     else:  # bottom-right
         left, top = width - margin - box_w, height - margin - box_h
 
     right, bottom = left + box_w, top + box_h
-    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 140))
+    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 150))
 
     cursor_x = left + pad_x
     center_y = (top + bottom) // 2
@@ -212,8 +222,8 @@ def fit_within_canvas(img, target_w, target_h):
 
 def render_kartica_story(local_path):
     """'Kartice' se SAMO uklapaju u Story format (bez sečenja) - potpuno
-    BEZ teksta, CTA linije ili logotipa. Ostaju čiste, tačno kako ih je
-    korisnik napravio."""
+    BEZ teksta, CTA linije ili logotipa. Ovde se ništa ne uređuje, samo se
+    slika postavlja."""
     img = Image.open(local_path)
     canvas = fit_within_canvas(img, TARGET_WIDTH, TARGET_HEIGHT)
     buf = io.BytesIO()
@@ -249,7 +259,7 @@ def render_obicna_slika_story(local_path):
     total_text_height = line_height * len(lines) + gap + cta_line_height
 
     pad_v = int(height * 0.022)
-    bottom_margin = int(height * 0.1)  # "malo iznad dna" - ne skroz na dnu
+    bottom_margin = int(height * 0.13)  # ostavlja mesta za mini bedž ispod
 
     band_bottom = height - bottom_margin
     band_top = band_bottom - total_text_height - pad_v * 2
@@ -270,7 +280,7 @@ def render_obicna_slika_story(local_path):
     y += gap
     draw_accent_line(draw, CTA_TEXT, cta_font, y, width)
 
-    draw_mini_badge(canvas, draw, width, height, "top-right")
+    draw_mini_badge(canvas, draw, width, height, "bottom-center")
 
     canvas = canvas.convert("RGB")
     buf = io.BytesIO()
@@ -331,6 +341,19 @@ def upload_to_cloudinary(image_bytes):
     raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
 
 
+def force_cloudinary_dimensions(url, width, height):
+    """Ubacuje eksplicitnu Cloudinary transformaciju u URL da GARANTUJE
+    tačne finalne dimenzije slike - bez obzira na podešavanja upload
+    preset-a."""
+    marker = "/upload/"
+    idx = url.find(marker)
+    if idx == -1:
+        return url
+    insert_at = idx + len(marker)
+    transform = f"w_{width},h_{height},c_fit,q_auto/"
+    return url[:insert_at] + transform + url[insert_at:]
+
+
 def main():
     picked = gdrive_helper.pick_random_story_source()
     log(f"Slika: {picked['content_type']}/{picked['subtype']}/{picked['file_name']}")
@@ -341,6 +364,7 @@ def main():
         final_image = render_obicna_slika_story(picked["local_path"])
 
     image_url = upload_to_cloudinary(final_image)
+    image_url = force_cloudinary_dimensions(image_url, TARGET_WIDTH, TARGET_HEIGHT)
 
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
