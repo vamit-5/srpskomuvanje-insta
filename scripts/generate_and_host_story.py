@@ -65,6 +65,22 @@ HIGHLIGHT_WORDS = {
     "slobodna",
 }
 
+# Reči koje se NIKAD ne biraju kao "glavna reč" kad HIGHLIGHT_WORDS ne
+# pogodi ništa (veznici, predlozi i sl. - ne nose poentu rečenice).
+STOPWORDS = {
+    "u", "i", "je", "su", "sam", "smo", "ste", "se", "da", "na", "za", "sa",
+    "od", "do", "ni", "ne", "a", "o", "pa", "ali", "ili", "kao", "sto", "što",
+    "koji", "koja", "koje", "kod", "iz", "po", "ka", "još", "vec", "već",
+    "ovog", "meseca", "godine", "godina", "srbiji", "srbija", "ti", "je,",
+}
+
+# Tekst na Story slici se NIKAD ne sme protegnuti preko previše prostora -
+# font se automatski smanjuje (do MIN_FONT_SCALE) dok cela izjava (sa
+# pozadinom) ne stane unutar MAX_BAND_HEIGHT_FRACTION visine slike.
+BASE_FONT_SCALE = 0.062
+MIN_FONT_SCALE = 0.032
+MAX_BAND_HEIGHT_FRACTION = 0.30
+
 
 def log(msg):
     print(f"[generate_and_host_story] {msg}", flush=True)
@@ -98,7 +114,53 @@ def wrap_text(draw, text, font, max_width):
     return lines
 
 
-def draw_highlighted_line(draw, line, font, y, canvas_width):
+def fit_text_and_font(draw, text_upper, width, height, max_width, reserved_extra=0):
+    """Nalazi NAJVEĆI font (počev od BASE_FONT_SCALE naniže) za koji cela
+    izjava (sa pozadinom, i sa mestom rezervisanim za CTA liniju ispod nje
+    - reserved_extra) staje unutar MAX_BAND_HEIGHT_FRACTION visine slike -
+    da tekst NIKAD ne prekrije prevelik deo slike, bez obzira koliko je
+    izjava duga."""
+    max_band_height = int(height * MAX_BAND_HEIGHT_FRACTION) - reserved_extra
+    max_band_height = max(max_band_height, int(height * 0.08))
+    scale = BASE_FONT_SCALE
+    while scale >= MIN_FONT_SCALE:
+        try:
+            font = ImageFont.truetype(FONT_PATH, int(width * scale))
+        except OSError:
+            font = ImageFont.load_default()
+            return font, wrap_text(draw, text_upper, font, max_width)
+        lines = wrap_text(draw, text_upper, font, max_width)
+        line_height = int(font.size * 1.18)
+        if line_height * len(lines) <= max_band_height:
+            return font, lines
+        scale -= 0.004
+    font = ImageFont.truetype(FONT_PATH, int(width * MIN_FONT_SCALE))
+    return font, wrap_text(draw, text_upper, font, max_width)
+
+
+def pick_highlight_words(text_upper):
+    """Vraća SET reči koje treba istaći lila-roza bojom. Prvo probamo
+    fiksnu listu HIGHLIGHT_WORDS. Ako nijedna reč iz teksta ne pogodi tu
+    listu, automatski biramo GLAVNU reč: prvo broj, inače najdužu 'pravu'
+    reč - da SVAKI tekst na slici uvek ima bar jednu istaknutu reč."""
+    words = text_upper.split()
+    normalized = [normalize_word(w) for w in words]
+
+    if any(w in HIGHLIGHT_WORDS for w in normalized):
+        return HIGHLIGHT_WORDS
+
+    for w in normalized:
+        if any(ch.isdigit() for ch in w):
+            return {w}
+
+    candidates = [w for w in normalized if w and w not in STOPWORDS and len(w) > 3]
+    if candidates:
+        return {max(candidates, key=len)}
+
+    return {max(normalized, key=len)} if normalized else set()
+
+
+def draw_highlighted_line(draw, line, font, y, canvas_width, highlight_words):
     words = line.split(" ")
     space_bbox = draw.textbbox((0, 0), " ", font=font)
     space_width = space_bbox[2] - space_bbox[0]
@@ -112,7 +174,7 @@ def draw_highlighted_line(draw, line, font, y, canvas_width):
     x = (canvas_width - total_width) / 2
 
     for word, w in zip(words, widths):
-        is_highlight = normalize_word(word) in HIGHLIGHT_WORDS
+        is_highlight = normalize_word(word) in highlight_words
         color = ACCENT_COLOR if is_highlight else (255, 255, 255, 255)
         for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2)]:
             draw.text((x + dx, y + dy), word, font=font, fill=(0, 0, 0, 255))
@@ -236,25 +298,34 @@ def render_obicna_slika_story(local_path):
     canvas = fit_within_canvas(img, TARGET_WIDTH, TARGET_HEIGHT)
     width, height = canvas.size
     canvas = canvas.convert("RGBA")
-    draw = ImageDraw.Draw(canvas, "RGBA")
+
+    # VAŽNO: sve što ima providnu (alpha) pozadinu crta se na POSEBNOM
+    # potpuno providnom sloju, koji se tek na kraju "stopi" (alpha_composite)
+    # sa slikom. Direktno crtanje providne boje na samu sliku (kako je bilo
+    # ranije) u Pillow-u NE meša boje - samo PREPIŠE piksele, pa providna
+    # crna pozadina ispadne potpuno NEPROVIDNA (čisto crna) na finalnoj
+    # slici. Ovo je bio pravi uzrok "pozadina nije providna" problema.
+    overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay, "RGBA")
 
     confession = pick_confession()
 
     try:
-        text_font = ImageFont.truetype(FONT_PATH, int(width * 0.062))
         cta_font = ImageFont.truetype(FONT_PATH, int(width * 0.038))
     except OSError:
         log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
-        text_font = ImageFont.load_default()
         cta_font = ImageFont.load_default()
 
     text_upper = confession.upper()
     max_width = int(width * 0.78)
-    lines = wrap_text(draw, text_upper, text_font, max_width)
-
-    line_height = int(text_font.size * 1.18) if hasattr(text_font, "size") else 26
     cta_line_height = int(cta_font.size * 1.3) if hasattr(cta_font, "size") else 20
     gap = int(height * 0.018)
+    text_font, lines = fit_text_and_font(
+        draw, text_upper, width, height, max_width, reserved_extra=gap + cta_line_height
+    )
+    highlight_words = pick_highlight_words(text_upper)
+
+    line_height = int(text_font.size * 1.18) if hasattr(text_font, "size") else 26
 
     total_text_height = line_height * len(lines) + gap + cta_line_height
 
@@ -274,14 +345,15 @@ def render_obicna_slika_story(local_path):
 
     y = band_top + pad_v
     for line in lines:
-        draw_highlighted_line(draw, line, text_font, y, width)
+        draw_highlighted_line(draw, line, text_font, y, width, highlight_words)
         y += line_height
 
     y += gap
     draw_accent_line(draw, CTA_TEXT, cta_font, y, width)
 
-    draw_mini_badge(canvas, draw, width, height, "bottom-center")
+    draw_mini_badge(overlay, draw, width, height, "bottom-center")
 
+    canvas = Image.alpha_composite(canvas, overlay)
     canvas = canvas.convert("RGB")
     buf = io.BytesIO()
     canvas.save(buf, format="JPEG", quality=90)
