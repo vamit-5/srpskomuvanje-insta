@@ -1,26 +1,30 @@
 #!/usr/bin/env python3
 """
 generate_and_host_image.py
-----------------------------
-1. Uzima SLEDEĆU neiskorišćenu sliku sa Google Drive-a, nasumično iz
-   "Srpskomuvanje/feed/kartice" ili "Srpskomuvanje/feed/obicne slike" - te
-   slike korisnik SAM generiše i ručno ih ubacuje na Drive.
-2a. Ako je slika iz "kartice" (već gotov, dizajniran izgled) - NE DIRA SE
-    NIKAKO, samo se propušta u JPEG format i šalje dalje tačno onakva
-    kakva jeste.
-2b. Ako je slika iz "obicne slike" (obična, neuređena slika) - uklapa se
-    CELA (bez sečenja) u format 1080x1350 (3:4), sa blago zamućenom
-    pozadinom iste slike da popuni prazan prostor, i ispisuje se kratka
-    "Priznajem: ..." izjava VELIKIM SLOVIMA (Pillow), plus logo + brend
-    tekst u ćošku.
-3. Otpremi finalnu sliku na Cloudinary (besplatan hosting) da dobije javni
-   URL (Instagram mora da povuče sliku sa javnog linka).
-4. Bira nasumičan CTA caption (poziv na akciju za srpskomuvanje.rs, NE
-   piše u prvom licu kao da je to profil osobe sa slike) i upisuje sve
-   (image_url, caption, podatke o slici sa Drive-a) u
-   output/post_content.json za publish_feed.py. Taj skript, POSLE
-   uspešnog objavljivanja, premešta iskorišćenu sliku u "Objavljeno"
-   folder na Drive-u da se nikad ne ponovi.
+------------------------------
+1. Uzima SLEDEĆU neiskorišćenu sliku sa Google Drive-a iz foldera
+   "Srpskomuvanje/feed/kartice" ili "Srpskomuvanje/feed/obicne slike".
+2. Slika se UVEK uklapa u tačan Instagram format 1080x1350 (format 4:5) -
+   to je MAKSIMALNI portret format koji Instagram prikazuje BEZ da sam
+   dodaje prazan prostor sa strane. Slika se NIKAD ne seče - ako originalne
+   dimenzije ne odgovaraju tačno tom formatu, prazan prostor se popunjava
+   zamućenom uvećanom kopijom iste slike (a ne belom/crnom pozadinom), tako
+   da se uvek vidi CELA slika, i da Instagram nikad sam ne doda svoj prazan
+   prostor sa strane.
+2a. "Kartice" (već gotov dizajn) - samo se uklope u format, BEZ IKAKVOG
+    teksta, logotipa ili bilo čega drugog preko slike. Ostaju potpuno čiste.
+2b. "Obične slike" - dodaje se kratka šokantna "Priznajem: ..." izjava, ali
+    NE veliko i NE po sredini slike - postavlja se u donjem delu slike (ne
+    skroz na dnu, malo iznad), na providnoj crnoj pozadini, beli tekst,
+    istaknute reči u lila-roza boji. Plus mini "srpskomuvanje" bedž u
+    ćošku (minijaturan, ali čitljiv).
+3. Otpremi finalnu sliku na Cloudinary da dobije javni URL.
+4. Bira generički CTA tekst za Instagram caption (NIKAD u prvom licu, kao
+   da fotografisana osoba priča o aplikaciji - to je uvek samostalan poziv
+   na akciju).
+5. Upisuje rezultat u output/post_content.json za publish_feed.py. Taj
+   skript, POSLE uspešnog objavljivanja, premešta iskorišćenu sliku u
+   "Objavljeno" folder na Drive-u da se nikad ne ponovi.
 """
 
 import io
@@ -43,15 +47,15 @@ LOGO_PATH = "logo.png"
 MAX_RETRIES = 5
 RETRY_DELAYS = [5, 10, 20, 40]
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+# 4:5 - Instagramov maksimalni portret format. Bilo šta "uže" od ovoga
+# (npr. 3:4) Instagram sam uokviri praznim prostorom sa strane - zato je
+# BITNO da finalna slika bude TAČNO ovih dimenzija.
 TARGET_WIDTH = 1080
 TARGET_HEIGHT = 1350
 
-# Ljubičasta/lila akcentna boja - menjaj samo ovu liniju ako želiš drugu
-# nijansu.
-ACCENT_COLOR = (191, 64, 255, 255)
+ACCENT_COLOR = (224, 102, 255, 255)  # lila-roza, za istaknute reči
 
-# Reči koje će biti istaknute akcentnom bojom kad se pojave u "Priznajem..."
-# tekstu na slici (ostatak teksta ostaje beo).
 HIGHLIGHT_WORDS = {
     "priznajem",
     "volim", "verujem", "tražim", "čekam",
@@ -64,18 +68,15 @@ def log(msg):
     print(f"[generate_and_host_image] {msg}", flush=True)
 
 
-def load_confessions_data():
-    with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
 def pick_confession():
-    data = load_confessions_data()
+    with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
     return random.choice(data["confessions"])
 
 
 def pick_cta_caption():
-    data = load_confessions_data()
+    with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
     return random.choice(data["cta_captions"])
 
 
@@ -131,26 +132,27 @@ def load_logo():
         try:
             _logo_cache["img"] = Image.open(LOGO_PATH).convert("RGBA")
         except (FileNotFoundError, OSError):
-            log(f"UPOZORENJE: {LOGO_PATH} nije nađen, crtam samo tekst bez loga.")
+            log(f"UPOZORENJE: {LOGO_PATH} nije nađen, crtam bez loga.")
             _logo_cache["img"] = None
     return _logo_cache["img"]
 
 
-def draw_brand_badge(img, draw, width, height, corner="top-left"):
-    """Crta logo (logo.png, providna pozadina) + tekst 'srpskomuvanje'
-    u ćošku slike, na providnoj tamnoj pločici radi čitljivosti."""
+def draw_mini_badge(img, draw, width, height, corner="top-right"):
+    """Mini brend bedž - logo + 'srpskomuvanje', UVEK u ćošku, potpuno
+    minijaturan, ali i dalje čitljiv. Koristi se SAMO na 'običnim slikama'
+    - kartice ostaju bez ikakvog dodatka."""
     logo = load_logo()
     text = "srpskomuvanje"
     try:
-        badge_font = ImageFont.truetype(FONT_PATH, int(width * 0.042))
+        badge_font = ImageFont.truetype(FONT_PATH, max(14, int(width * 0.024)))
     except OSError:
         badge_font = ImageFont.load_default()
 
-    icon_size = int(width * 0.11)
-    gap = int(width * 0.02)
-    pad_x = int(width * 0.025)
-    pad_y = int(width * 0.018)
-    margin = int(width * 0.045)
+    icon_size = max(16, int(width * 0.05))
+    gap = int(width * 0.01)
+    pad_x = int(width * 0.014)
+    pad_y = int(width * 0.009)
+    margin = int(width * 0.03)
 
     bbox = draw.textbbox((0, 0), text, font=badge_font)
     text_w = bbox[2] - bbox[0]
@@ -171,7 +173,7 @@ def draw_brand_badge(img, draw, width, height, corner="top-left"):
         left, top = width - margin - box_w, height - margin - box_h
 
     right, bottom = left + box_w, top + box_h
-    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.3), fill=(0, 0, 0, 145))
+    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 140))
 
     cursor_x = left + pad_x
     center_y = (top + bottom) // 2
@@ -185,8 +187,10 @@ def draw_brand_badge(img, draw, width, height, corner="top-left"):
 
 
 def fit_within_canvas(img, target_w, target_h):
-    """Uklapa CELU sliku (bez sečenja) unutar canvas-a, sa zamućenom
-    uvećanom kopijom iste slike kao pozadinom da popuni prazan prostor."""
+    """Uklapa CELU sliku (bez sečenja) unutar canvas-a TAČNIH dimenzija
+    target_w x target_h. Prazan prostor se popunjava zamućenom uvećanom
+    kopijom iste slike (a ne praznom bojom), tako da Instagram nikad sam
+    ne dodaje svoj prazan prostor sa strane."""
     img = img.convert("RGB")
     src_w, src_h = img.size
 
@@ -212,11 +216,13 @@ def fit_within_canvas(img, target_w, target_h):
 
 
 def render_kartica(local_path):
-    """'Kartice' se NE DIRAJU - samo se propuštaju u JPEG format tačno
-    onakve kakve jesu, bez sečenja, uklapanja ili teksta."""
-    img = Image.open(local_path).convert("RGB")
+    """'Kartice' se SAMO uklapaju u tačan Instagram format (bez sečenja) -
+    BEZ IKAKVOG teksta, logotipa ili bilo čega drugog preko slike. Ostaju
+    potpuno čiste, tačno kako ih je korisnik napravio."""
+    img = Image.open(local_path)
+    canvas = fit_within_canvas(img, TARGET_WIDTH, TARGET_HEIGHT)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=95)
+    canvas.save(buf, format="JPEG", quality=95)
     return buf.getvalue()
 
 
@@ -230,27 +236,38 @@ def render_obicna_slika(local_path):
     confession = pick_confession()
 
     try:
-        text_font = ImageFont.truetype(FONT_PATH, int(width * 0.075))
+        text_font = ImageFont.truetype(FONT_PATH, int(width * 0.062))
     except OSError:
         log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
         text_font = ImageFont.load_default()
 
     text_upper = confession.upper()
-    max_width = int(width * 0.85)
+    max_width = int(width * 0.78)
     lines = wrap_text(draw, text_upper, text_font, max_width)
 
-    line_height = int(text_font.size * 1.15) if hasattr(text_font, "size") else 28
+    line_height = int(text_font.size * 1.2) if hasattr(text_font, "size") else 26
     total_text_height = line_height * len(lines)
 
-    band_top = height - total_text_height - int(height * 0.10)
-    draw.rectangle([(0, band_top), (width, height)], fill=(0, 0, 0, 175))
+    pad_v = int(height * 0.025)
+    bottom_margin = int(height * 0.09)  # "malo iznad dna" - ne skroz na dnu
 
-    y = height - total_text_height - int(height * 0.06)
+    band_bottom = height - bottom_margin
+    band_top = band_bottom - total_text_height - pad_v * 2
+    band_left = int(width * 0.06)
+    band_right = width - band_left
+
+    draw.rounded_rectangle(
+        [(band_left, band_top), (band_right, band_bottom)],
+        radius=int(pad_v * 1.2),
+        fill=(0, 0, 0, 165),
+    )
+
+    y = band_top + pad_v
     for line in lines:
         draw_highlighted_line(draw, line, text_font, y, width)
         y += line_height
 
-    draw_brand_badge(canvas, draw, width, height, "top-left")
+    draw_mini_badge(canvas, draw, width, height, "top-right")
 
     canvas = canvas.convert("RGB")
     buf = io.BytesIO()
@@ -313,7 +330,7 @@ def upload_to_cloudinary(image_bytes):
 
 def main():
     picked = gdrive_helper.pick_random_image(CONTENT_TYPE)
-    log(f"Slika: feed/{picked['subtype']}/{picked['file_name']}")
+    log(f"Slika: {picked['subtype']}/{picked['file_name']}")
 
     if picked["subtype"] == "kartice":
         final_image = render_kartica(picked["local_path"])
@@ -327,7 +344,7 @@ def main():
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(
             {
-                "category": picked["subtype"],
+                "category": f"{CONTENT_TYPE}/{picked['subtype']}",
                 "caption": caption,
                 "image_url": image_url,
                 "gdrive_file_id": picked["file_id"],
@@ -338,8 +355,7 @@ def main():
             ensure_ascii=False,
             indent=2,
         )
-    log(f"Gotovo. Slika: {image_url}")
-    log(f"Caption: {caption}")
+    log(f"Gotovo. Feed slika: {image_url}")
 
 
 if __name__ == "__main__":
