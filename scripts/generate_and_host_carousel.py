@@ -24,6 +24,9 @@ generate_and_host_carousel.py
 3c. POSLEDNJI slajd "običnih slika" carousela je UVEK poseban - poziva
     gledaoca da se besplatno pridruži prvom srpskom dating app-u, umesto
     obične "Priznajem..." izjave.
+3d. VAŽNO: "Priznajem..." izjave i novi "hook" tekstovi (statistika o
+    Srbiji) se NIKAD ne mešaju u ISTOM carousel-u. Ceo carousel je ili
+    SAV od "Priznajem..." izjava, ili SAV od "hook" statistika.
 4. Otpremi sve slike na Cloudinary.
 5. Bira preuveličan/hype CTA tekst (NIKAD u prvom licu) za caption celog
    carousela.
@@ -62,11 +65,9 @@ MIN_SLIDES = 4
 MAX_SLIDES = 7
 REPEAT_SAME_IMAGE_CHANCE = 0.5  # samo za "obične slike"
 
-# Šansa da se za "obične slike" carousel iskoristi novi "hook" par
-# (statistika o Srbiji) na jednom od slajdova - kod "hook" para su
-# tekst na tom slajdu i CELI caption carousela MEĐUSOBNO POVEZANI (prva
-# rečenica je na slici, ostatak ide u opis). Inače se slajdovi i caption
-# biraju nezavisno kao i do sada.
+# Šansa da CEO "obične slike" carousel bude sastavljen od "hook" tekstova
+# (statistika o Srbiji) umesto od "Priznajem..." izjava. Bira se JEDNOM za
+# ceo carousel - NIKAD se ne mešaju u istoj objavi.
 HOOK_CHANCE = 0.5
 
 ACCENT_COLOR = (224, 102, 255, 255)  # lila-roza, za istaknute reči
@@ -164,13 +165,32 @@ def pick_cta_caption():
     return random.choice(data["cta_captions"])
 
 
+def _fill_from_pool(source, needed):
+    """Pomoćna funkcija: bira 'needed' tekstova iz 'source' liste. Ako ima
+    dovoljno RAZLIČITIH tekstova, bira ih bez ponavljanja. Ako nema
+    dovoljno, dopunjava nasumičnim ponavljanjem (da carousel uvek ima
+    tražen broj slajdova, čak i kad je pool manji od potrebnog broja)."""
+    if needed <= len(source):
+        return random.sample(source, needed)
+    chosen = list(source)
+    random.shuffle(chosen)
+    while len(chosen) < needed:
+        chosen.append(random.choice(source))
+    return chosen[:needed]
+
+
 def pick_confessions_and_caption(k):
     """Bira k tekstova za slajdove (poslednji je UVEK poseban 'pridruži se
-    besplatno' poziv) PLUS caption za ceo carousel. Sa HOOK_CHANCE
-    verovatnoćom, JEDAN od običnih slajdova koristi tekst iz novog 'hooks'
-    para (statistika o Srbiji), a caption celog carousela je VEZAN za TAJ
-    ISTI hook (prva rečenica na slici, ostatak u opisu). Inače se slajdovi
-    i caption biraju nezavisno kao i do sada."""
+    besplatno' poziv) PLUS caption za ceo carousel.
+
+    VAŽNO: 'Priznajem...' izjave i novi 'hook' tekstovi (statistika o
+    Srbiji) se NIKAD ne mešaju u ISTOM carousel-u - to su dva odvojena
+    "stila" i mešanje im kvari utisak. Zato se OVDE bira, JEDNOM za ceo
+    carousel, da li će SVI obični slajdovi biti 'Priznajem...' izjave, ili
+    će SVI biti 'hook' statistike (sa HOOK_CHANCE verovatnoćom bira se
+    hook stil). Caption celog carousela je uvek vezan za ISTI stil koji je
+    iskorišćen na slajdovima (kod hook stila - caption jednog od
+    iskorišćenih hookova; kod 'Priznajem' stila - nezavisan CTA opis)."""
     with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
     pool = list(data["confessions"])
@@ -178,21 +198,13 @@ def pick_confessions_and_caption(k):
     hooks = data.get("hooks", [])
 
     regular_needed = k - 1
-    if regular_needed <= len(pool):
-        regular = random.sample(pool, regular_needed)
-    else:
-        regular = list(pool)
-        random.shuffle(regular)
-        while len(regular) < regular_needed:
-            regular.append(random.choice(pool))
-        regular = regular[:regular_needed]
 
     if hooks and regular_needed >= 1 and random.random() < HOOK_CHANCE:
-        hook = random.choice(hooks)
-        slot = random.randrange(regular_needed)
-        regular[slot] = hook["overlay"]
-        caption = hook["caption"]
+        chosen_hooks = _fill_from_pool(hooks, regular_needed)
+        regular = [h["overlay"] for h in chosen_hooks]
+        caption = random.choice(chosen_hooks)["caption"]
     else:
+        regular = _fill_from_pool(pool, regular_needed)
         caption = random.choice(data["cta_captions"])
 
     closing = random.choice(closing_pool)
@@ -341,7 +353,7 @@ def draw_mini_badge(img, draw, width, height, position="bottom-center"):
         left, top = width - margin - box_w, height - margin - box_h
 
     right, bottom = left + box_w, top + box_h
-    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 130))
+    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 150))
 
     cursor_x = left + pad_x
     center_y = (top + bottom) // 2
@@ -426,7 +438,7 @@ def render_obicna_slika_slide(local_path, text):
     draw.rounded_rectangle(
         [(band_left, band_top), (band_right, band_bottom)],
         radius=int(pad_v * 1.2),
-        fill=(0, 0, 0, 130),
+        fill=(0, 0, 0, 75),
     )
 
     y = band_top + pad_v
