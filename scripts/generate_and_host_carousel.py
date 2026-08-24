@@ -2,22 +2,24 @@
 """
 generate_and_host_carousel.py
 --------------------------------
-1. Bira nasumičan "profil" (ime, pol, godine) iz content/profiles.json.
-2. Generiše JEDAN HYPERREALISTIČAN portret te osobe preko Higgsfield API-ja
-   (plaćeno, ~$0.09-0.15 po slici) - Srbi/Srpkinje, autentično, ne
-   generički izgled. Taj ISTI portret se koristi za SVIH 7 slajdova (da ne
-   plaćamo 7 slika po objavi) - menja se samo tekst preko slike.
-3. Bira nasumičnu "priču" (niz od 6-7 slajdova koji grade narativ) iz
-   content/stories.json.
-4. Za SVAKI slajd: iseca portret na tačan format (1080x1350), tamni ga i
-   ispisuje tekst tog slajda VELIKIM SLOVIMA po sredini (Pillow) - ključne
-   reči su istaknute u ljubičastoj boji, ostatak beo. Dodaje broj slajda
-   (npr. "3/7") gore levo, IME i GODINE gore desno, i brend tag dole desno.
-   BEZ emoji.
-5. Otpremi svaku sliku na Cloudinary (Higgsfield čuva slike samo 7 dana,
-   zato odmah otpremamo portret na Cloudinary i njega dalje koristimo).
-6. Upisuje listu image_url-ova i caption (profilova kratka priča + CTA) u
-   output/carousel_content.json za publish_carousel.py.
+1. Bira nasumično "kartice" ili "obicne slike" iz
+   "Srpskomuvanje/carousels/" na Google Drive-u (koji god ima dovoljno
+   slika - treba bar 2 za carousel).
+2a. Ako je "kartice" - bira NEKOLIKO RAZLIČITIH gotovih slika (4-7,
+    zavisno koliko ih ima) i koristi ih TAČNO onakve kakve jesu, bez
+    ikakve izmene, kao slajdove.
+2b. Ako je "obicne slike" - ponekad bira NEKOLIKO RAZLIČITIH slika (svaka
+    sa svojim "Priznajem..." tekstom), a ponekad bira JEDNU te ISTU sliku i
+    ponavlja je na svim slajdovima sa RAZLIČITIM tekstom na svakom (nasumično
+    se bira koji od ta dva načina). Svaka slika se uklapa CELA (bez sečenja)
+    u format 1080x1350 (3:4), sa zamućenom pozadinom da popuni prazan
+    prostor, plus broj slajda gore levo i logo+brend dole desno.
+3. Otpremi svaku sliku na Cloudinary (besplatan hosting) da dobije javni
+   URL (Instagram mora da povuče slike sa javnog linka).
+4. Bira nasumičan CTA caption i upisuje sve (image_urls, caption, podatke
+   o slikama sa Drive-a) u output/carousel_content.json za
+   publish_carousel.py. Taj skript, POSLE uspešnog objavljivanja, premešta
+   svaku iskorišćenu sliku u "Objavljeno" na Drive-u da se nikad ne ponovi.
 """
 
 import io
@@ -26,14 +28,15 @@ import os
 import random
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 import uuid
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-PROFILES_FILE = "content/profiles.json"
-STORIES_FILE = "content/stories.json"
+import gdrive_helper
+
+CONTENT_TYPE = "carousels"
+CONFESSIONS_FILE = "content/confessions.json"
 OUTPUT_FILE = "output/carousel_content.json"
 LOGO_PATH = "logo.png"
 MAX_RETRIES = 5
@@ -41,56 +44,21 @@ RETRY_DELAYS = [5, 10, 20, 40]
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 TARGET_WIDTH = 1080
 TARGET_HEIGHT = 1350
-HIGGSFIELD_ENDPOINT = "https://platform.higgsfield.ai/higgsfield-ai/soul/standard"
-HIGGSFIELD_ASPECT_RATIO = "3:4"
-HIGGSFIELD_RESOLUTION = "720p"
-MIN_AGE = 22
-MAX_AGE = 34
+MIN_SLIDES = 4
+MAX_SLIDES = 7
+# Šansa (0-1) da se za "obicne slike" ponovi JEDNA ista slika na svim
+# slajdovima (sa različitim tekstom), umesto da se uzme više različitih slika.
+REPEAT_SAME_IMAGE_CHANCE = 0.5
 
 # Ljubičasta/lila akcentna boja - menjaj samo ovu liniju ako želiš drugu
 # nijansu.
 ACCENT_COLOR = (191, 64, 255, 255)
 
-# Reči koje će biti istaknute akcentnom bojom kad se pojave u tekstu slajda
-# (ostatak teksta ostaje beo). Poredi se bez velikih/malih slova i
-# interpunkcije.
 HIGHLIGHT_WORDS = {
-    "srbi", "srpkinje", "srba", "srpkinja",
-    "blizini", "blizine", "blizu",
-    "večeras", "noćas",
-    "smuvaš", "smuvaju", "smuvaj", "smuvao", "smuvala", "smuvate", "smuvaćeš",
-    "srpskomuvanje.rs",
-    "app", "app-a", "app-u",
-    "srpski", "srbiji",
-    "najhotiji", "hotiji", "hot",
+    "priznajem",
+    "volim", "verujem", "tražim", "čekam",
     "besplatno", "besplatan", "besplatna",
-    "diskretno", "diskretan", "diskretna", "diskretnost",
-    "prvi", "prvog",
-    "potpuno",
-    "tajna", "tajno", "anonimno", "anoniman",
-    "ljubav", "strast", "strasti",
-    "sada", "odmah", "danas",
-    "garantovano", "garantujemo",
-    "vrele", "vrela",
-    "igre",
-    "jedini", "jedina", "jedinstveno",
-}
-
-# Higgsfield promptovi za hyperrealistične portrete - Slavic/Balkan izgled,
-# editorijalni stil, autentično, ne generički AI izgled.
-HIGGSFIELD_PROMPTS = {
-    "male": [
-        "Candid amateur smartphone selfie of an ordinary Serbian man in his late 20s, taken with a phone front camera in a dimly lit apartment, slightly imperfect framing and focus, unretouched skin with visible pores and minor imperfections, ordinary everyday clothing, typical Balkan Slavic features, unposed genuine expression, realistic amateur photo, not professionally shot, no filter, no retouching",
-        "Casual candid phone photo of an extremely handsome, tall, muscular Serbian man with an athletic build, taken by a friend at a kafana or bar, natural warm indoor lighting, slightly grainy low-light phone camera quality, real visible skin texture, typical Serbian features, unposed candid moment, casual clothes, authentic amateur snapshot, not a professional photoshoot",
-        "Real candid phone photo of an ordinary Serbian man standing outside on a street in his neighborhood, overcast daylight, slightly imperfect composition and framing, natural unretouched skin, typical Balkan Slavic features, plain ordinary clothing, genuine unposed expression, realistic amateur snapshot, not professionally shot",
-        "Amateur mirror selfie of an extremely attractive tall muscular Serbian man with an athletic build, casual gym or streetwear clothing, phone camera flash, slightly harsh uneven lighting typical of a real selfie, visible skin texture, typical Serbian features, unposed, authentic, not polished or edited",
-    ],
-    "female": [
-        "Candid amateur smartphone selfie of an ordinary Serbian woman in her late 20s, taken with a phone front camera in a dimly lit apartment, slightly imperfect framing and focus, unretouched skin with visible pores and minor imperfections, ordinary everyday clothing, little to no makeup, typical Balkan Slavic features, unposed genuine expression, realistic amateur photo, not professionally shot, no filter, no retouching",
-        "Casual candid phone photo of an extremely attractive Serbian woman, taken by a friend at a cafe or bar, natural warm indoor lighting, slightly grainy low-light phone camera quality, real visible skin texture, typical Serbian features, unposed candid moment, stylish casual outfit, authentic amateur snapshot, not a professional photoshoot",
-        "Real candid phone photo of an ordinary Serbian woman standing outside on a street in her neighborhood, overcast daylight, slightly imperfect composition and framing, natural unretouched skin, minimal makeup, typical Balkan Slavic features, plain ordinary clothing, genuine unposed expression, realistic amateur snapshot, not professionally shot",
-        "Amateur mirror selfie of an extremely attractive Serbian woman, stylish casual outfit, phone camera flash, slightly harsh uneven lighting typical of a real selfie, visible skin texture, typical Serbian features, unposed, authentic, not polished or edited",
-    ],
+    "diskretno", "diskretan", "diskretna",
 }
 
 
@@ -98,189 +66,27 @@ def log(msg):
     print(f"[generate_and_host_carousel] {msg}", flush=True)
 
 
-def higgsfield_headers():
-    key_id = os.environ.get("HF_API_KEY_ID", "").strip()
-    key_secret = os.environ.get("HF_API_KEY_SECRET", "").strip()
-    if not key_id or not key_secret:
-        raise RuntimeError("Nedostaje HF_API_KEY_ID ili HF_API_KEY_SECRET.")
-    # User-Agent je OBAVEZAN - bez njega Higgsfield-ov Cloudflare vraća
-    # grešku 403 (error code 1010) jer podrazumevani Python User-Agent
-    # izgleda kao bot.
-    return {
-        "Authorization": f"Key {key_id}:{key_secret}",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-    }
+def load_confessions_data():
+    with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-def http_get_bytes_with_retry(url, headers=None):
-    last_error = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            req_headers = {"User-Agent": "srpskomuvanje-bot/1.0"}
-            if headers:
-                req_headers.update(headers)
-            req = urllib.request.Request(url, headers=req_headers)
-            with urllib.request.urlopen(req, timeout=60) as response:
-                return response.read()
-        except urllib.error.HTTPError as e:
-            if 400 <= e.code < 500:
-                log(f"TRAJNA GREŠKA ({e.code}), odustajem.")
-                raise RuntimeError(f"Trajna greška {e.code}") from e
-            last_error = RuntimeError(f"HTTP {e.code}")
-            log(f"Privremena greška (pokušaj {attempt}/{MAX_RETRIES}): {last_error}")
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            last_error = e
-            log(f"Mrežna greška (pokušaj {attempt}/{MAX_RETRIES}): {e}")
-
-        if attempt < MAX_RETRIES:
-            delay = RETRY_DELAYS[attempt - 1]
-            log(f"Čekam {delay}s pre sledećeg pokušaja...")
-            time.sleep(delay)
-
-    raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
+def pick_confessions(k):
+    data = load_confessions_data()
+    pool = data["confessions"][:]
+    random.shuffle(pool)
+    if k <= len(pool):
+        return pool[:k]
+    # Ako treba više izjava nego što ih imamo, dopuni sa ponavljanjem.
+    result = pool[:]
+    while len(result) < k:
+        result.append(random.choice(data["confessions"]))
+    return result[:k]
 
 
-def http_get_json(url, headers):
-    req = urllib.request.Request(url, method="GET")
-    for k, v in headers.items():
-        req.add_header(k, v)
-    with urllib.request.urlopen(req, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def http_post_json_with_retry(url, payload, headers):
-    data = json.dumps(payload).encode("utf-8")
-    last_error = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            req = urllib.request.Request(url, data=data, method="POST")
-            req.add_header("Content-Type", "application/json")
-            for k, v in headers.items():
-                req.add_header(k, v)
-            with urllib.request.urlopen(req, timeout=60) as response:
-                body = response.read().decode("utf-8")
-                return json.loads(body)
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            if 400 <= e.code < 500:
-                log(f"TRAJNA GREŠKA ({e.code}), odustajem. Odgovor: {body}")
-                raise RuntimeError(f"Trajna greška {e.code}: {body}") from e
-            last_error = RuntimeError(f"HTTP {e.code}: {body}")
-            log(f"Privremena greška (pokušaj {attempt}/{MAX_RETRIES}): {last_error}")
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            last_error = e
-            log(f"Mrežna greška (pokušaj {attempt}/{MAX_RETRIES}): {e}")
-
-        if attempt < MAX_RETRIES:
-            delay = RETRY_DELAYS[attempt - 1]
-            log(f"Čekam {delay}s pre sledećeg pokušaja...")
-            time.sleep(delay)
-
-    raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
-
-
-def poll_until_done(status_url, headers):
-    delay = 2
-    max_delay = 10
-    max_wait_seconds = 360
-    waited = 0
-    while waited < max_wait_seconds:
-        try:
-            data = http_get_json(status_url, headers)
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
-            log(f"Greška pri proveri statusa, pokušavam ponovo: {e}")
-            time.sleep(delay)
-            waited += delay
-            delay = min(delay + 1, max_delay)
-            continue
-
-        status = data.get("status")
-        log(f"Status generisanja: {status} (čekano {waited}s)")
-        if status == "completed":
-            return data
-        if status in ("failed", "nsfw", "canceled"):
-            raise RuntimeError(f"Higgsfield generisanje nije uspelo (status={status}).")
-
-        time.sleep(delay)
-        waited += delay
-        delay = min(delay + 1, max_delay)
-
-    raise RuntimeError("Higgsfield generisanje nije završeno u razumnom vremenu.")
-
-
-def generate_higgsfield_portrait(prompt):
-    headers = higgsfield_headers()
-    payload = {
-        "prompt": prompt,
-        "aspect_ratio": HIGGSFIELD_ASPECT_RATIO,
-        "resolution": HIGGSFIELD_RESOLUTION,
-    }
-    log(f"Šaljem zahtev Higgsfield-u: {prompt}")
-    submit_result = http_post_json_with_retry(HIGGSFIELD_ENDPOINT, payload, headers)
-
-    status_url = submit_result.get("status_url")
-    if not status_url:
-        raise RuntimeError(f"Neočekivan odgovor od Higgsfield-a: {submit_result}")
-
-    result = poll_until_done(status_url, headers)
-    images = result.get("images") or []
-    if not images or "url" not in images[0]:
-        raise RuntimeError(f"Higgsfield nije vratio sliku: {result}")
-    return images[0]["url"]
-
-
-def generate_portrait_with_fallback(prompt_pool):
-    last_error = None
-    for attempt in range(2):
-        prompt = random.choice(prompt_pool)
-        try:
-            return generate_higgsfield_portrait(prompt)
-        except RuntimeError as e:
-            last_error = e
-            log(f"Pokušaj generisanja nije uspeo ({e}), probam ponovo sa drugim promptom...")
-    raise RuntimeError(f"Higgsfield generisanje nije uspelo posle 2 pokušaja: {last_error}")
-
-
-def pick_profile():
-    with open(PROFILES_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    gender = random.choice(["male", "female"])
-    name = random.choice(data["names"][gender])
-    age = random.randint(MIN_AGE, MAX_AGE)
-    bio_template = random.choice(data["bio_templates"][gender])
-    bio = bio_template.format(name=name, age=age)
-    return {
-        "gender": gender,
-        "name": name,
-        "age": age,
-        "bio": bio,
-        "prompt_pool": HIGGSFIELD_PROMPTS[gender],
-    }
-
-
-def pick_story():
-    with open(STORIES_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return random.choice(data["stories"])
-
-
-def crop_to_fill(img, target_w, target_h):
-    src_w, src_h = img.size
-    src_ratio = src_w / src_h
-    target_ratio = target_w / target_h
-
-    if src_ratio > target_ratio:
-        new_h = target_h
-        new_w = max(target_w, int(src_w * (target_h / src_h)))
-    else:
-        new_w = target_w
-        new_h = max(target_h, int(src_h * (target_w / src_w)))
-
-    img = img.resize((new_w, new_h), Image.LANCZOS)
-    left = (new_w - target_w) // 2
-    top = (new_h - target_h) // 2
-    return img.crop((left, top, left + target_w, top + target_h))
+def pick_cta_caption():
+    data = load_confessions_data()
+    return random.choice(data["cta_captions"])
 
 
 def normalize_word(word):
@@ -364,9 +170,6 @@ def load_logo():
 
 
 def draw_brand_badge(img, draw, width, height, corner="bottom-right"):
-    """Crta logo (logo.png, providna pozadina) + tekst 'srpskomuvanje'
-    u ćošku slajda, na providnoj tamnoj pločici radi čitljivosti (slika više
-    nije skoro-neprozirno zatamnjena, pa treba lokalni kontrast)."""
     logo = load_logo()
     text = "srpskomuvanje"
     try:
@@ -412,49 +215,75 @@ def draw_brand_badge(img, draw, width, height, corner="bottom-right"):
     draw.text((cursor_x, center_y - text_h // 2 - bbox[1]), text, font=badge_font, fill=(255, 255, 255, 255))
 
 
-def add_slide_text(base_rgb_image, text, slide_number, total_slides, profile):
-    # KRUCIJALNO: pravimo .copy() od baznog isečenog portreta za SVAKI
-    # slajd, da se tamni sloj i tekst ne gomilaju jedni na druge.
-    img = base_rgb_image.copy().convert("RGBA")
-    width, height = img.size
+def fit_within_canvas(img, target_w, target_h):
+    """Uklapa CELU sliku (bez sečenja) unutar canvas-a, sa zamućenom
+    uvećanom kopijom iste slike kao pozadinom da popuni prazan prostor."""
+    img = img.convert("RGB")
+    src_w, src_h = img.size
 
-    # Blago zatamnjenje (ne skoro-neprozirno kao ranije) - slika ostaje
-    # svetla i jasna, čitljivost teksta drži crni obrub oko svakog slova.
-    dark_overlay = Image.new("RGBA", img.size, (0, 0, 0, 70))
-    img = Image.alpha_composite(img, dark_overlay)
-    draw = ImageDraw.Draw(img, "RGBA")
+    fit_scale = min(target_w / src_w, target_h / src_h)
+    fit_w, fit_h = max(1, int(src_w * fit_scale)), max(1, int(src_h * fit_scale))
+    fitted = img.resize((fit_w, fit_h), Image.LANCZOS)
+
+    bg_scale = max(target_w / src_w, target_h / src_h)
+    bg_w, bg_h = max(1, int(src_w * bg_scale)), max(1, int(src_h * bg_scale))
+    bg = img.resize((bg_w, bg_h), Image.LANCZOS)
+    bg_left = (bg_w - target_w) // 2
+    bg_top = (bg_h - target_h) // 2
+    bg = bg.crop((bg_left, bg_top, bg_left + target_w, bg_top + target_h))
+    bg = bg.filter(ImageFilter.GaussianBlur(45))
+    dark = Image.new("RGB", bg.size, (0, 0, 0))
+    bg = Image.blend(bg, dark, 0.35)
+
+    canvas = bg.copy()
+    paste_x = (target_w - fit_w) // 2
+    paste_y = (target_h - fit_h) // 2
+    canvas.paste(fitted, (paste_x, paste_y))
+    return canvas
+
+
+def render_kartica_slide(local_path):
+    """'Kartice' se NE DIRAJU - samo se propuštaju u JPEG format tačno
+    onakve kakve jesu (bez sečenja, teksta ili brojeva slajda)."""
+    img = Image.open(local_path).convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    return buf.getvalue()
+
+
+def render_obicna_slika_slide(local_path, confession, slide_number, total_slides):
+    img = Image.open(local_path)
+    canvas = fit_within_canvas(img, TARGET_WIDTH, TARGET_HEIGHT)
+    width, height = canvas.size
+    canvas = canvas.convert("RGBA")
+    draw = ImageDraw.Draw(canvas, "RGBA")
 
     try:
-        font_size = int(width * 0.085)
-        font = ImageFont.truetype(FONT_PATH, font_size)
+        text_font = ImageFont.truetype(FONT_PATH, int(width * 0.075))
         badge_font = ImageFont.truetype(FONT_PATH, int(width * 0.045))
-        tag_font = ImageFont.truetype(FONT_PATH, int(width * 0.032))
     except OSError:
         log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
-        font = ImageFont.load_default()
+        text_font = ImageFont.load_default()
         badge_font = ImageFont.load_default()
-        tag_font = ImageFont.load_default()
-        font_size = 20
 
-    text_upper = text.upper()
+    text_upper = confession.upper()
     max_width = int(width * 0.85)
-    lines = wrap_text(draw, text_upper, font, max_width)
+    lines = wrap_text(draw, text_upper, text_font, max_width)
 
-    line_height = int(font_size * 1.15)
+    line_height = int(text_font.size * 1.15) if hasattr(text_font, "size") else 28
     total_text_height = line_height * len(lines)
 
     y = (height - total_text_height) / 2
     for line in lines:
-        draw_highlighted_line(draw, line, font, y, width)
+        draw_highlighted_line(draw, line, text_font, y, width)
         y += line_height
 
     draw_corner_tag(draw, f"{slide_number}/{total_slides}", badge_font, width, height, "top-left", (255, 255, 255, 255))
-    draw_corner_tag(draw, f"{profile['name'].upper()}, {profile['age']}", tag_font, width, height, "top-right", ACCENT_COLOR)
-    draw_brand_badge(img, draw, width, height, "bottom-right")
+    draw_brand_badge(canvas, draw, width, height, "bottom-right")
 
-    img = img.convert("RGB")
+    canvas = canvas.convert("RGB")
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
+    canvas.save(buf, format="JPEG", quality=90)
     return buf.getvalue()
 
 
@@ -510,41 +339,70 @@ def upload_to_cloudinary(image_bytes):
     raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
 
 
+def choose_subtype_and_slides():
+    """Nasumično bira 'kartice' ili 'obicne slike' (koji god ima dovoljno
+    slika - bar 2), i koliko slajdova ćemo praviti. Vraća (subtype, k,
+    allow_repeat)."""
+    subtypes = random.sample(gdrive_helper.SUBTYPES, len(gdrive_helper.SUBTYPES))
+    for st in subtypes:
+        available = gdrive_helper.count_images(CONTENT_TYPE, st)
+        if st == "obicne slike" and available >= 1 and random.random() < REPEAT_SAME_IMAGE_CHANCE:
+            k = random.randint(MIN_SLIDES, MAX_SLIDES)
+            return st, k, True
+        if available >= 2:
+            k = min(random.randint(MIN_SLIDES, MAX_SLIDES), available)
+            return st, k, False
+    raise RuntimeError(
+        "Nema dovoljno slika ni u 'kartice' ni u 'obicne slike' unutar 'carousels' "
+        "(treba bar 2) - ubaci još slika na Drive pa pokreni ponovo."
+    )
+
+
 def main():
-    profile = pick_profile()
-    log(f"Profil: {profile['name']}, {profile['age']} godina ({profile['gender']})")
+    subtype, k, allow_repeat = choose_subtype_and_slides()
+    picked_list = gdrive_helper.pick_random_images_multi(CONTENT_TYPE, subtype, k, allow_repeat=allow_repeat)
+    total_slides = len(picked_list)
+    log(f"Carousel: carousels/{subtype}, {total_slides} slajdova, ista slika ponovljena: {allow_repeat}")
 
-    story = pick_story()
-    total_slides = len(story["slides"])
-    log(f"Izabrana priča: {story['title']} ({total_slides} slajdova)")
-
-    portrait_url = generate_portrait_with_fallback(profile["prompt_pool"])
-    log(f"Preuzimam portret: {portrait_url}")
-    portrait_bytes = http_get_bytes_with_retry(portrait_url)
-    base_image = Image.open(io.BytesIO(portrait_bytes)).convert("RGB")
-    base_image = crop_to_fill(base_image, TARGET_WIDTH, TARGET_HEIGHT)
+    if subtype == "kartice":
+        confessions = [None] * total_slides
+    else:
+        confessions = pick_confessions(total_slides)
 
     image_urls = []
-    for i, slide_text in enumerate(story["slides"]):
-        log(f"Slajd {i + 1}/{total_slides}: {slide_text}")
-        final_image = add_slide_text(base_image, slide_text, i + 1, total_slides, profile)
+    for i, picked in enumerate(picked_list):
+        log(f"Slajd {i + 1}/{total_slides}: {picked['file_name']}")
+        if subtype == "kartice":
+            final_image = render_kartica_slide(picked["local_path"])
+        else:
+            final_image = render_obicna_slika_slide(picked["local_path"], confessions[i], i + 1, total_slides)
         url = upload_to_cloudinary(final_image)
         image_urls.append(url)
+
+    caption = pick_cta_caption()
 
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(
             {
-                "title": f"{story['title']} - {profile['name']}, {profile['age']}",
+                "title": f"Carousel - {subtype}",
                 "image_urls": image_urls,
-                "caption": profile["bio"],
+                "caption": caption,
+                "gdrive_items": [
+                    {
+                        "file_id": p["file_id"],
+                        "file_name": p["file_name"],
+                        "source_folder_id": p["source_folder_id"],
+                    }
+                    for p in picked_list
+                ],
             },
             f,
             ensure_ascii=False,
             indent=2,
         )
     log(f"Gotovo. {len(image_urls)} slika spremno za carousel.")
-    log(f"Caption: {profile['bio']}")
+    log(f"Caption: {caption}")
 
 
 if __name__ == "__main__":
