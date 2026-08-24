@@ -27,14 +27,6 @@ slika (0.7 = 70% šanse za kartice, 30% za obične slike).
 Posle uspešnog objavljivanja (u publish_*.py skriptama), iskorišćena slika
 se premešta u automatski kreiran "Objavljeno" podfolder - unutar ISTOG
 foldera iz kog je uzeta - da se nikad ne ponovi.
-
-POPRAVKA (avgust 2026): count_images() je ranije ćutke gutao SVAKU grešku
-(RuntimeError) i vraćao 0, bez ijednog traga u logu - zbog toga se činilo
-da "kartice" nikad nema slika, iako je pravi uzrok bio neka konkretna
-greška (npr. da se ime foldera na Drive-u ne poklapa tačno). Sada se
-svaka takva greška ODŠTAMPA u GitHub Actions log, a greška "folder nije
-nađen" dodatno ispisuje TAČNU listu podfoldera koji stvarno postoje na
-tom mestu - da bi se odmah videlo da li je u pitanju drugačije ime foldera.
 """
 
 import io
@@ -106,21 +98,6 @@ def find_folder(service, name, parent_id=None):
             return None
 
 
-def _list_subfolder_names(service, parent_id):
-    """Pomoćna funkcija SAMO za jasnije poruke o grešci: vraća listu
-    imena svih podfoldera unutar parent_id (da se u poruci greške vidi
-    tačno koji folderi stvarno postoje, umesto samo 'nije nađen')."""
-    try:
-        response = service.files().list(
-            q=f"'{parent_id}' in parents and trashed = false and mimeType = '{FOLDER_MIME}'",
-            spaces="drive",
-            fields="files(name)",
-        ).execute()
-        return [f["name"] for f in response.get("files", [])]
-    except Exception:
-        return []
-
-
 def ensure_folder(service, name, parent_id):
     """Nađe folder po imenu unutar parent_id, ili ga napravi ako ne
     postoji. Vraća ID foldera."""
@@ -184,6 +161,21 @@ def _get_root(service):
             f"Proveri da li je podeljen sa servisnim nalogom (Editor pristup)."
         )
     return root_id
+
+
+def _list_subfolder_names(service, parent_id):
+    """Pomoćna funkcija SAMO za jasnije poruke o grešci: vraća listu
+    imena svih podfoldera unutar parent_id (da se u poruci greške vidi
+    tačno koji folderi stvarno postoje, umesto samo 'nije nađen')."""
+    try:
+        response = service.files().list(
+            q=f"'{parent_id}' in parents and trashed = false and mimeType = '{FOLDER_MIME}'",
+            spaces="drive",
+            fields="files(name)",
+        ).execute()
+        return [f["name"] for f in response.get("files", [])]
+    except Exception:
+        return []
 
 
 def _get_subtype_folder(service, root_id, content_type, subtype):
@@ -335,6 +327,7 @@ def pick_random_story_source(work_dir="/tmp/gdrive_images"):
     try:
         subtype = _choose_weighted_subtype(content_type)
     except RuntimeError:
+        # ovaj content_type je prazan, probaj drugi
         other_content_type = "carousels" if content_type == "feed" else "feed"
         content_type = other_content_type
         subtype = _choose_weighted_subtype(content_type)
