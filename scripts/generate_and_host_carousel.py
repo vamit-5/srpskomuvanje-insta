@@ -2,23 +2,31 @@
 """
 generate_and_host_carousel.py
 ---------------------------------
-1. Bira SLUČAJNO iz "Srpskomuvanje/carousels/kartice" ili
-   "Srpskomuvanje/carousels/obicne slike".
+1. Bira "Srpskomuvanje/carousels/kartice" ili "carousels/obicne slike".
+   "Kartice" imaju PRIORITET (gdrive_helper.KARTICE_WEIGHT - 70% šanse kad
+   ima bar 2 kartice) jer su već gotov dizajn i ne treba im nikakva obrada.
 2. Nekad pravi carousel od VIŠE RAZLIČITIH slika, a nekad (samo za
    "obične slike") od JEDNE ISTE slike ponovljene više puta, sa RAZLIČITIM
    tekstom na svakom slajdu.
-3. Svaki slajd se UVEK uklapa u tačan Instagram format 1080x1350 (4:5) -
-   to je MAKSIMALNI portret format koji Instagram prikazuje BEZ da sam
-   dodaje prazan prostor sa strane. Slika se NIKAD ne seče - prazan
-   prostor se popunjava zamućenom uvećanom kopijom iste slike.
-3a. "Kartice" - samo se uklope u format, BEZ IKAKVOG teksta ili logotipa.
-3b. "Obične slike" - dodaje se kratka šokantna "Priznajem: ..." izjava, ne
-    veliko i ne po sredini - u donjem delu slajda (malo iznad dna), na
-    providnoj crnoj pozadini, beli tekst, istaknute reči lila-roza. Plus
-    mini brojač slajda (npr. "3/6") u gornjem levom ćošku i mini brend
-    bedž u gornjem desnom ćošku.
+3. Svaki slajd se UVEK uklapa u tačan Instagram format 1080x1350 (4:5).
+   Slika se NIKAD ne seče - prazan prostor se popunjava zamućenom
+   uvećanom kopijom iste slike. Svaki otpremljeni URL se dodatno
+   "osigurava" eksplicitnom Cloudinary transformacijom (tačne dimenzije u
+   URL-u) da ne bi slučajno došlo do praznog prostora sa strane.
+3a. "Kartice" - samo se uklope u format, BEZ IKAKVOG teksta ili logotipa -
+    ovde se ništa ne uređuje, ni na jednom slajdu, samo se postavljaju.
+3b. "Obične slike" - dodaje se kratka šokantna/"uhvatljiva" izjava (ne
+    veliko, ne po sredini) - u donjem delu slajda, na providnoj crnoj
+    pozadini, beli tekst, istaknute reči lila-roza. Mini brend bedž je pri
+    DNU na sredini slike (van dometa Instagramovog brojača slajdova gore).
+    NEMA više brojanja slajdova (1/6, 2/6...) nacrtanog na slici - to
+    Instagram već sam prikazuje svojim ugrađenim indikatorom.
+3c. POSLEDNJI slajd "običnih slika" carousela je UVEK poseban - poziva
+    gledaoca da se besplatno pridruži prvom srpskom dating app-u, umesto
+    obične "Priznajem..." izjave.
 4. Otpremi sve slike na Cloudinary.
-5. Bira generički CTA tekst (NIKAD u prvom licu) za caption celog carousela.
+5. Bira preuveličan/hype CTA tekst (NIKAD u prvom licu) za caption celog
+   carousela.
 6. Upisuje rezultat u output/carousel_content.json za publish_carousel.py.
    Taj skript, POSLE uspešnog objavljivanja, premešta SVAKU iskorišćenu
    sliku u njen "Objavljeno" podfolder na Drive-u (svaku samo jednom, čak
@@ -46,8 +54,7 @@ MAX_RETRIES = 5
 RETRY_DELAYS = [5, 10, 20, 40]
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-# 4:5 - Instagramov maksimalni portret format. Bilo šta "uže" od ovoga
-# (npr. 3:4) Instagram sam uokviri praznim prostorom sa strane.
+# 4:5 - zvanično podržan Instagram Graph API opseg je 4:5 do 1.91:1.
 TARGET_WIDTH = 1080
 TARGET_HEIGHT = 1350
 
@@ -62,6 +69,9 @@ HIGHLIGHT_WORDS = {
     "volim", "verujem", "tražim", "čekam",
     "besplatno", "besplatan", "besplatna",
     "diskretno", "diskretan", "diskretna",
+    "opasna", "opasne", "opasnim",
+    "slobodna",
+    "pridruži", "skini", "uđi",
 }
 
 
@@ -70,42 +80,59 @@ def log(msg):
 
 
 def choose_subtype_and_slides():
-    """Bira folder (kartice/obicne slike) i broj slajdova. 'Kartice' idu
-    UVEK sa različitim slikama (nikad ponavljanje - nema smisla ponavljati
+    """Bira folder i broj slajdova. 'Kartice' imaju PRIORITET
+    (gdrive_helper.KARTICE_WEIGHT šanse) kad ima bar 2 kartice - idu UVEK
+    sa različitim slikama (nikad ponavljanje, nema smisla ponavljati
     kartice pošto ostaju bez teksta). 'Obične slike' idu ili sa različitim
     slikama, ili (50% šanse, ili kad nema dovoljno različitih) sa jednom
-    istom slikom ponovljenom više puta uz različit tekst na svakom slajdu."""
-    candidates = ["kartice", "obicne slike"]
-    random.shuffle(candidates)
-    for subtype in candidates:
-        count = gdrive_helper.count_images(CONTENT_TYPE, subtype)
-        if count == 0:
-            continue
-        if subtype == "obicne slike":
-            if count >= 2 and random.random() >= REPEAT_SAME_IMAGE_CHANCE:
-                k = min(random.randint(MIN_SLIDES, MAX_SLIDES), count)
-                return subtype, k, False
-            k = random.randint(MIN_SLIDES, MAX_SLIDES)
-            return subtype, k, True
-        else:  # kartice
-            if count >= 2:
-                k = min(random.randint(MIN_SLIDES, MAX_SLIDES), count)
-                return subtype, k, False
-            continue
+    istom slikom ponovljenom više puta uz različit tekst na svakom
+    slajdu."""
+    kartice_count = gdrive_helper.count_images(CONTENT_TYPE, "kartice")
+    obicne_count = gdrive_helper.count_images(CONTENT_TYPE, "obicne slike")
+
+    if kartice_count == 0 and obicne_count == 0:
+        raise RuntimeError("Nema dovoljno slika ni u jednom folderu za carousel (treba bar 2 slike).")
+
+    prefer_kartice = kartice_count >= 2 and (
+        obicne_count < 2 or random.random() < gdrive_helper.KARTICE_WEIGHT
+    )
+
+    if prefer_kartice:
+        k = min(random.randint(MIN_SLIDES, MAX_SLIDES), kartice_count)
+        return "kartice", k, False
+
+    if obicne_count >= 2 and random.random() >= REPEAT_SAME_IMAGE_CHANCE:
+        k = min(random.randint(MIN_SLIDES, MAX_SLIDES), obicne_count)
+        return "obicne slike", k, False
+
+    if obicne_count >= 1:
+        k = random.randint(MIN_SLIDES, MAX_SLIDES)
+        return "obicne slike", k, True
+
+    # Nema dovoljno "običnih slika", a kartica ima samo 1 - ne može carousel.
     raise RuntimeError("Nema dovoljno slika ni u jednom folderu za carousel (treba bar 2 slike).")
 
 
 def pick_confessions(k):
+    """Bira k tekstova za slajdove: poslednji je UVEK poseban 'pridruži se
+    besplatno' poziv, ostali su nasumične 'Priznajem...' izjave."""
     with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
     pool = list(data["confessions"])
-    if k <= len(pool):
-        return random.sample(pool, k)
-    result = list(pool)
-    random.shuffle(result)
-    while len(result) < k:
-        result.append(random.choice(pool))
-    return result[:k]
+    closing_pool = list(data["closing_slide_texts"])
+
+    regular_needed = k - 1
+    if regular_needed <= len(pool):
+        regular = random.sample(pool, regular_needed)
+    else:
+        regular = list(pool)
+        random.shuffle(regular)
+        while len(regular) < regular_needed:
+            regular.append(random.choice(pool))
+        regular = regular[:regular_needed]
+
+    closing = random.choice(closing_pool)
+    return regular + [closing]
 
 
 def pick_cta_caption():
@@ -171,10 +198,12 @@ def load_logo():
     return _logo_cache["img"]
 
 
-def draw_mini_badge(img, draw, width, height, corner="top-right"):
-    """Mini brend bedž - logo + 'srpskomuvanje', UVEK u ćošku, potpuno
-    minijaturan, ali čitljiv. Koristi se SAMO na 'običnim slikama' -
-    kartice ostaju bez ikakvog dodatka."""
+def draw_mini_badge(img, draw, width, height, position="bottom-center"):
+    """Mini brend bedž - logo + 'srpskomuvanje', minijaturan ali čitljiv.
+    Podrazumevano je pri DNU, na sredini slike - namerno NE u ćošku, jer
+    Instagram tamo prikazuje svoj brojač slajdova (npr. '1/4') koji bi ga
+    prekrio. Koristi se SAMO na 'običnim slikama' - kartice ostaju bez
+    ikakvog dodatka."""
     logo = load_logo()
     text = "srpskomuvanje"
     try:
@@ -197,17 +226,19 @@ def draw_mini_badge(img, draw, width, height, corner="top-right"):
     box_w = content_w + pad_x * 2
     box_h = content_h + pad_y * 2
 
-    if corner == "top-left":
+    if position == "bottom-center":
+        left, top = (width - box_w) // 2, height - margin - box_h
+    elif position == "top-left":
         left, top = margin, margin
-    elif corner == "top-right":
+    elif position == "top-right":
         left, top = width - margin - box_w, margin
-    elif corner == "bottom-left":
+    elif position == "bottom-left":
         left, top = margin, height - margin - box_h
     else:  # bottom-right
         left, top = width - margin - box_w, height - margin - box_h
 
     right, bottom = left + box_w, top + box_h
-    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 140))
+    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.4), fill=(0, 0, 0, 150))
 
     cursor_x = left + pad_x
     center_y = (top + bottom) // 2
@@ -220,35 +251,10 @@ def draw_mini_badge(img, draw, width, height, corner="top-right"):
     draw.text((cursor_x, center_y - text_h // 2 - bbox[1]), text, font=badge_font, fill=(255, 255, 255, 255))
 
 
-def draw_slide_tag(draw, width, height, slide_number, total_slides):
-    """Mini brojač slajda (npr. '3/6'), gornji levi ćošak, minijaturan."""
-    text = f"{slide_number}/{total_slides}"
-    try:
-        font = ImageFont.truetype(FONT_PATH, max(14, int(width * 0.028)))
-    except OSError:
-        font = ImageFont.load_default()
-
-    pad_x = int(width * 0.016)
-    pad_y = int(width * 0.010)
-    margin = int(width * 0.03)
-
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
-    box_w = text_w + pad_x * 2
-    box_h = text_h + pad_y * 2
-
-    left, top = margin, margin
-    right, bottom = left + box_w, top + box_h
-    draw.rounded_rectangle([(left, top), (right, bottom)], radius=int(pad_y * 1.3), fill=(0, 0, 0, 140))
-    draw.text((left + pad_x, top + pad_y - bbox[1]), text, font=font, fill=(255, 255, 255, 255))
-
-
 def fit_within_canvas(img, target_w, target_h):
     """Uklapa CELU sliku (bez sečenja) unutar canvas-a TAČNIH dimenzija
     target_w x target_h. Prazan prostor se popunjava zamućenom uvećanom
-    kopijom iste slike, tako da Instagram nikad sam ne dodaje prazan
-    prostor sa strane."""
+    kopijom iste slike."""
     img = img.convert("RGB")
     src_w, src_h = img.size
 
@@ -274,8 +280,8 @@ def fit_within_canvas(img, target_w, target_h):
 
 
 def render_kartica_slide(local_path):
-    """'Kartice' se SAMO uklapaju u tačan format - BEZ IKAKVOG teksta,
-    brojača slajda ili logotipa preko slike."""
+    """'Kartice' se SAMO uklapaju u tačan format - BEZ IKAKVOG teksta ili
+    logotipa preko slike, ni na jednom slajdu (uključujući poslednji)."""
     img = Image.open(local_path)
     canvas = fit_within_canvas(img, TARGET_WIDTH, TARGET_HEIGHT)
     buf = io.BytesIO()
@@ -283,7 +289,7 @@ def render_kartica_slide(local_path):
     return buf.getvalue()
 
 
-def render_obicna_slika_slide(local_path, confession, slide_number, total_slides):
+def render_obicna_slika_slide(local_path, text):
     img = Image.open(local_path)
     canvas = fit_within_canvas(img, TARGET_WIDTH, TARGET_HEIGHT)
     width, height = canvas.size
@@ -296,7 +302,7 @@ def render_obicna_slika_slide(local_path, confession, slide_number, total_slides
         log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
         text_font = ImageFont.load_default()
 
-    text_upper = confession.upper()
+    text_upper = text.upper()
     max_width = int(width * 0.78)
     lines = wrap_text(draw, text_upper, text_font, max_width)
 
@@ -304,7 +310,7 @@ def render_obicna_slika_slide(local_path, confession, slide_number, total_slides
     total_text_height = line_height * len(lines)
 
     pad_v = int(height * 0.025)
-    bottom_margin = int(height * 0.09)  # "malo iznad dna" - ne skroz na dnu
+    bottom_margin = int(height * 0.15)  # ostavlja mesta za mini bedž ispod
 
     band_bottom = height - bottom_margin
     band_top = band_bottom - total_text_height - pad_v * 2
@@ -322,8 +328,7 @@ def render_obicna_slika_slide(local_path, confession, slide_number, total_slides
         draw_highlighted_line(draw, line, text_font, y, width)
         y += line_height
 
-    draw_slide_tag(draw, width, height, slide_number, total_slides)
-    draw_mini_badge(canvas, draw, width, height, "top-right")
+    draw_mini_badge(canvas, draw, width, height, "bottom-center")
 
     canvas = canvas.convert("RGB")
     buf = io.BytesIO()
@@ -384,6 +389,19 @@ def upload_to_cloudinary(image_bytes, slide_index):
     raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
 
 
+def force_cloudinary_dimensions(url, width, height):
+    """Ubacuje eksplicitnu Cloudinary transformaciju u URL da GARANTUJE
+    tačne finalne dimenzije slajda - bez obzira na podešavanja upload
+    preset-a."""
+    marker = "/upload/"
+    idx = url.find(marker)
+    if idx == -1:
+        return url
+    insert_at = idx + len(marker)
+    transform = f"w_{width},h_{height},c_fit,q_auto/"
+    return url[:insert_at] + transform + url[insert_at:]
+
+
 def main():
     subtype, k, allow_repeat = choose_subtype_and_slides()
     log(f"Carousel: subtype={subtype}, slajdova={k}, ponavljanje_iste_slike={allow_repeat}")
@@ -391,9 +409,9 @@ def main():
     picks = gdrive_helper.pick_random_images_multi(CONTENT_TYPE, subtype, k, allow_repeat=allow_repeat)
 
     if subtype == "kartice":
-        confessions_for_slides = [None] * len(picks)
+        texts_for_slides = [None] * len(picks)
     else:
-        confessions_for_slides = pick_confessions(len(picks))
+        texts_for_slides = pick_confessions(len(picks))
 
     image_urls = []
     gdrive_items = []
@@ -401,10 +419,9 @@ def main():
         if subtype == "kartice":
             final_image = render_kartica_slide(picked["local_path"])
         else:
-            final_image = render_obicna_slika_slide(
-                picked["local_path"], confessions_for_slides[i], i + 1, len(picks)
-            )
+            final_image = render_obicna_slika_slide(picked["local_path"], texts_for_slides[i])
         image_url = upload_to_cloudinary(final_image, i + 1)
+        image_url = force_cloudinary_dimensions(image_url, TARGET_WIDTH, TARGET_HEIGHT)
         image_urls.append(image_url)
         gdrive_items.append(
             {
