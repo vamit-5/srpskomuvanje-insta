@@ -95,7 +95,14 @@ def higgsfield_headers():
     key_secret = os.environ.get("HF_API_KEY_SECRET", "").strip()
     if not key_id or not key_secret:
         raise RuntimeError("Nedostaje HF_API_KEY_ID ili HF_API_KEY_SECRET.")
-    return {"Authorization": f"Key {key_id}:{key_secret}"}
+    # User-Agent je OBAVEZAN - bez njega Higgsfield-ov Cloudflare vraća
+    # grešku 403 (error code 1010) jer podrazumevani Python User-Agent
+    # izgleda kao bot.
+    return {
+        "Authorization": f"Key {key_id}:{key_secret}",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+    }
 
 
 def http_get_bytes_with_retry(url, headers=None):
@@ -441,4 +448,8 @@ def main():
             ensure_ascii=False,
             indent=2,
         )
-    log(f"Gotovo.
+    log(f"Gotovo. Story slika: {image_url}")
+
+
+if __name__ == "__main__":
+    main()
