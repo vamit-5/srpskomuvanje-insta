@@ -426,7 +426,7 @@ def render_obicna_slika_slide(local_path, text):
     draw.rounded_rectangle(
         [(band_left, band_top), (band_right, band_bottom)],
         radius=int(pad_v * 1.2),
-        fill=(0, 0, 0, 165),
+        fill=(0, 0, 0, 90),
     )
 
     y = band_top + pad_v
