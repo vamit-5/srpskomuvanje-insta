@@ -3,7 +3,8 @@
 publish_carousel.py
 ----------------------
 Objavljuje Carousel (više slika za swipe) na Instagram, koristeći podatke
-koje je generate_and_host_carousel.py pripremio u output/carousel_content.json.
+koje je generate_and_host_carousel.py pripremio u
+output/carousel_content.json.
 
 Koraci (Instagram Content Publishing API):
 1. Za SVAKU sliku: POST /{ig-user-id}/media sa image_url + is_carousel_item=true
@@ -12,6 +13,9 @@ Koraci (Instagram Content Publishing API):
    caption -> dobijamo GLAVNI container ID.
 3. Sačekamo da glavni container bude spreman.
 4. POST /{ig-user-id}/media_publish sa creation_id=glavni container ID.
+
+Posle uspešnog objavljivanja, premeštamo SVAKU iskorišćenu sliku na Google
+Drive-u u njen "Objavljeno" podfolder (da se nikad ne ponovi ista slika).
 """
 
 import json
@@ -21,6 +25,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import gdrive_helper
 
 MAX_RETRIES = 5
 RETRY_DELAYS = [5, 10, 20, 40]
@@ -105,6 +111,36 @@ def wait_until_ready(container_id, token):
     raise RuntimeError(f"Container {container_id} nije postao spreman u razumnom vremenu.")
 
 
+def archive_used_carousel(content):
+    """Premesti SVAKU iskorišćenu sliku iz carousela u Objavljeno na
+    Drive-u (svaku sliku samo jednom, čak i ako je ista slika bila na
+    više slajdova). Ako neka ne uspe, ne rušimo ceo posao (carousel je
+    već objavljen) - samo upozorimo i nastavimo sa ostalima."""
+    items = content.get("gdrive_items")
+    if not items:
+        log("UPOZORENJE: nema Google Drive podataka u carousel_content.json, preskačem arhiviranje.")
+        return
+
+    seen_file_ids = set()
+    for item in items:
+        file_id = item.get("file_id")
+        if not file_id or file_id in seen_file_ids:
+            continue
+        seen_file_ids.add(file_id)
+        if "source_folder_id" not in item:
+            continue
+        try:
+            gdrive_helper.archive_image(
+                {
+                    "file_id": file_id,
+                    "file_name": item.get("file_name"),
+                    "source_folder_id": item["source_folder_id"],
+                }
+            )
+        except Exception as e:
+            log(f"UPOZORENJE: nisam uspeo da arhiviram sliku '{item.get('file_name', file_id)}' ({e}).")
+
+
 def main():
     ig_user_id = os.environ.get("IG_USER_ID", "").strip()
     if not ig_user_id:
@@ -162,6 +198,8 @@ def main():
         raise RuntimeError(f"Neočekivan odgovor pri objavljivanju: {publish_result}")
 
     log(f"USPEŠNO OBJAVLJEN CAROUSEL! Media ID: {publish_result['id']}")
+
+    archive_used_carousel(content)
 
 
 if __name__ == "__main__":
