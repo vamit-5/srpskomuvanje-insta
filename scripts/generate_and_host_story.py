@@ -2,35 +2,33 @@
 """
 generate_and_host_story.py
 -----------------------------
-1. Bira tekst za Story iz DVA izvora naizmenično (za veću raznovrsnost):
-   - polovina puta: hook iz content/captions.json (zadata kategorija)
-   - polovina puta: jedna rečenica iz nasumične priče u content/stories.json
-2. Traži PRAVU fotografiju preko Pexels API-ja (besplatno) - biramo scene
-   koje prikazuju diskretnost, anonimnost i ljubav (siluete, senke, dodir
-   ruku), sa evropskim/balkanskim izgledom osoba - lice se NE vidi jasno.
-3. Iseca sliku na format cele Instagram Story (1080x1920), tamni je (crni
-   sloj preko cele slike + jača zona iza teksta) i ispisuje tekst VELIKIM
-   SLOVIMA (Pillow) - ključne reči su istaknute u ljubičastoj boji, ostatak
-   beo. Ispod dodaje fiksnu CTA liniju (srpskomuvanje.rs - link u bio-u) u
+1. Bira nasumičan "profil" (ime, pol, godine) iz content/profiles.json,
+   isto kao Feed objave.
+2. Generiše HYPERREALISTIČAN portret te osobe preko Higgsfield API-ja
+   (plaćeno, ~$0.09-0.15 po slici) - Srbi/Srpkinje, autentično, ne
+   generički izgled.
+3. Iseca sliku na format cele Instagram Story (1080x1920), tamni je i
+   ispisuje IME, GODINE i kratku privlačnu rečenicu VELIKIM SLOVIMA
+   (Pillow) - ključne reči su istaknute u ljubičastoj boji, ostatak beo.
+   Ispod dodaje fiksnu CTA liniju (srpskomuvanje.rs - link u bio-u) u
    ljubičastoj boji. BEZ emoji.
-4. Otpremi finalnu sliku na Cloudinary da dobije javni URL.
+4. Otpremi finalnu sliku na Cloudinary (besplatan hosting) da dobije javni
+   URL (Higgsfield čuva slike samo 7 dana, zato ih odmah prebacujemo).
 5. Upisuje rezultat (category, hook, image_url) u output/story_content.json
    za publish_story.py.
 
-Poziva se ovako: python scripts/generate_and_host_story.py <kategorija>
-gde je <kategorija> jedno od: cta, humor_citati, relatable (koristi se samo
-za biranje raspoloženja fotografije, ne i teksta).
+Poziva se ovako: python scripts/generate_and_host_story.py
+(kategorija se više ne koristi za ovaj format)
 
 NAPOMENA: Instagram Content Publishing API ne podržava caption za Stories,
-zato Stories NE nose caption - koristimo samo "hook" tekst i dodajemo fiksnu
-CTA liniju direktno na sliku.
+zato Stories NE nose caption - koristimo samo ime/godine/hook i dodajemo
+fiksnu CTA liniju direktno na sliku.
 """
 
 import io
 import json
 import os
 import random
-import sys
 import time
 import urllib.error
 import urllib.parse
@@ -39,8 +37,7 @@ import uuid
 
 from PIL import Image, ImageDraw, ImageFont
 
-CAPTIONS_FILE = "content/captions.json"
-STORIES_FILE = "content/stories.json"
+PROFILES_FILE = "content/profiles.json"
 OUTPUT_FILE = "output/story_content.json"
 MAX_RETRIES = 5
 RETRY_DELAYS = [5, 10, 20, 40]
@@ -48,64 +45,57 @@ FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 TARGET_WIDTH = 1080
 TARGET_HEIGHT = 1920
 CTA_TEXT = "SRPSKOMUVANJE.RS - LINK U BIO-U"
-PEXELS_SEARCH_URL = "https://api.pexels.com/v1/search"
+HIGGSFIELD_ENDPOINT = "https://platform.higgsfield.ai/higgsfield-ai/soul/standard"
+HIGGSFIELD_ASPECT_RATIO = "9:16"
+HIGGSFIELD_RESOLUTION = "720p"
+MIN_AGE = 22
+MAX_AGE = 34
 
-# Ljubičasta/lila akcentna boja za istaknute reči - menjaj samo ovu liniju
-# ako želiš drugu nijansu.
+# Ljubičasta/lila akcentna boja - menjaj samo ovu liniju ako želiš drugu
+# nijansu.
 ACCENT_COLOR = (191, 64, 255, 255)
 
-# Reči koje će biti istaknute akcentnom bojom kad se pojave u tekstu
-# (ostatak teksta ostaje beo). Poredi se bez velikih/malih slova i
+# Reči koje će biti istaknute akcentnom bojom kad se pojave u tekstu na
+# slici (ostatak teksta ostaje beo). Poredi se bez velikih/malih slova i
 # interpunkcije.
 HIGHLIGHT_WORDS = {
-    "srbi", "srpkinje", "srba", "srpkinja",
-    "blizini", "blizine", "blizu",
-    "večeras", "noćas",
-    "smuvaš", "smuvaju", "smuvaj", "smuvao", "smuvala", "smuvate", "smuvaćeš",
+    "sam", "sama",
+    "tražim", "čekam", "spreman", "spremna",
+    "pravog", "pravu", "pravo",
+    "umoran", "umorna",
     "srpskomuvanje.rs",
-    "app", "app-a", "app-u",
-    "srpski", "srbiji",
-    "najhotiji", "hotiji", "hot",
     "besplatno", "besplatan", "besplatna",
-    "diskretno", "diskretan", "diskretna", "diskretnost",
-    "prvi", "prvog",
-    "potpuno",
-    "tajna", "tajno", "anonimno", "anoniman",
-    "ljubav", "strast", "strasti",
-    "sada", "odmah", "danas",
-    "garantovano", "garantujemo",
-    "vrele", "vrela",
-    "igre",
-    "jedini", "jedina", "jedinstveno",
+    "diskretno", "diskretan", "diskretna",
 }
 
-# Upiti biraju scene koje prikazuju DISKRETNOST, ANONIMNOST i LJUBAV -
-# siluete, senke, dodir ruku, sa evropskim/balkanskim izgledom osoba - lice
-# se NE vidi jasno. Izgleda autentično i izbegava pravni rizik.
-PEXELS_QUERY_POOLS = {
-    "cta": [
-        "european couple silhouette sunset holding hands",
-        "european couple close up night city lights",
-        "european couple silhouette secret embrace night",
-        "european couple dancing silhouette nightclub",
+# Higgsfield promptovi za hyperrealistične portrete - Slavic/Balkan izgled,
+# editorijalni stil, autentično, ne generički AI izgled.
+HIGGSFIELD_PROMPTS = {
+    "male": [
+        "Editorial portrait of a young Serbian man in his late 20s, natural daylight, candid confident expression, casual streetwear, authentic skin texture, Balkan features, shot on 50mm lens, photorealistic",
+        "Editorial portrait of an attractive Serbian man, warm evening light, slight smile, short beard, casual jacket, natural skin texture, candid not posed, photorealistic",
+        "Editorial portrait of a handsome Serbian man in a cozy cafe, soft window light, genuine smile, Balkan features, natural skin texture, photorealistic, amateur candid feel",
+        "Editorial portrait of a young Serbian man outdoors at golden hour, relaxed pose, natural skin texture, Balkan features, photorealistic, candid expression",
     ],
-    "humor_citati": [
-        "european friends laughing silhouette bar night",
-        "european couple laughing close up candlelight",
-        "european person secret smile close up night portrait",
-        "two european people clinking glasses night out",
-    ],
-    "relatable": [
-        "european person texting phone bed dark room",
-        "european woman smiling at phone screen dark room",
-        "european woman getting ready mirror silhouette bedroom",
-        "european friends laughing cafe table from behind",
+    "female": [
+        "Editorial portrait of a young Serbian woman in her late 20s, natural daylight, soft candid smile, casual stylish outfit, authentic skin texture, Balkan features, shot on 50mm lens, photorealistic",
+        "Editorial portrait of an attractive Serbian woman, warm evening light, gentle expression, natural makeup, Balkan features, natural skin texture, candid not posed, photorealistic",
+        "Editorial portrait of a beautiful Serbian woman in a cozy cafe, soft window light, genuine smile, Balkan features, natural skin texture, photorealistic, amateur candid feel",
+        "Editorial portrait of a young Serbian woman outdoors at golden hour, relaxed pose, natural skin texture, Balkan features, photorealistic, candid expression",
     ],
 }
 
 
 def log(msg):
     print(f"[generate_and_host_story] {msg}", flush=True)
+
+
+def higgsfield_headers():
+    key_id = os.environ.get("HF_API_KEY_ID", "").strip()
+    key_secret = os.environ.get("HF_API_KEY_SECRET", "").strip()
+    if not key_id or not key_secret:
+        raise RuntimeError("Nedostaje HF_API_KEY_ID ili HF_API_KEY_SECRET.")
+    return {"Authorization": f"Key {key_id}:{key_secret}"}
 
 
 def http_get_bytes_with_retry(url, headers=None):
@@ -136,17 +126,23 @@ def http_get_bytes_with_retry(url, headers=None):
     raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
 
 
-def http_get_json_with_retry(url, headers=None):
-    raw = http_get_bytes_with_retry(url, headers=headers)
-    return json.loads(raw.decode("utf-8"))
+def http_get_json(url, headers):
+    req = urllib.request.Request(url, method="GET")
+    for k, v in headers.items():
+        req.add_header(k, v)
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
-def http_post_with_retry(url, data_bytes, content_type):
+def http_post_json_with_retry(url, payload, headers):
+    data = json.dumps(payload).encode("utf-8")
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            req = urllib.request.Request(url, data=data_bytes, method="POST")
-            req.add_header("Content-Type", content_type)
+            req = urllib.request.Request(url, data=data, method="POST")
+            req.add_header("Content-Type", "application/json")
+            for k, v in headers.items():
+                req.add_header(k, v)
             with urllib.request.urlopen(req, timeout=60) as response:
                 body = response.read().decode("utf-8")
                 return json.loads(body)
@@ -169,48 +165,82 @@ def http_post_with_retry(url, data_bytes, content_type):
     raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
 
 
-def pick_story_text():
-    use_caption_hook = random.random() < 0.5
+def poll_until_done(status_url, headers):
+    delay = 2
+    max_delay = 10
+    max_wait_seconds = 360
+    waited = 0
+    while waited < max_wait_seconds:
+        try:
+            data = http_get_json(status_url, headers)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
+            log(f"Greška pri proveri statusa, pokušavam ponovo: {e}")
+            time.sleep(delay)
+            waited += delay
+            delay = min(delay + 1, max_delay)
+            continue
 
-    if use_caption_hook:
-        with open(CAPTIONS_FILE, "r", encoding="utf-8") as f:
-            bank = json.load(f)
-        category = random.choice(list(bank.keys()))
-        entry = random.choice(bank[category])
-        return entry["hook"]
+        status = data.get("status")
+        log(f"Status generisanja: {status} (čekano {waited}s)")
+        if status == "completed":
+            return data
+        if status in ("failed", "nsfw", "canceled"):
+            raise RuntimeError(f"Higgsfield generisanje nije uspelo (status={status}).")
 
-    with open(STORIES_FILE, "r", encoding="utf-8") as f:
+        time.sleep(delay)
+        waited += delay
+        delay = min(delay + 1, max_delay)
+
+    raise RuntimeError("Higgsfield generisanje nije završeno u razumnom vremenu.")
+
+
+def generate_higgsfield_portrait(prompt):
+    headers = higgsfield_headers()
+    payload = {
+        "prompt": prompt,
+        "aspect_ratio": HIGGSFIELD_ASPECT_RATIO,
+        "resolution": HIGGSFIELD_RESOLUTION,
+    }
+    log(f"Šaljem zahtev Higgsfield-u: {prompt}")
+    submit_result = http_post_json_with_retry(HIGGSFIELD_ENDPOINT, payload, headers)
+
+    status_url = submit_result.get("status_url")
+    if not status_url:
+        raise RuntimeError(f"Neočekivan odgovor od Higgsfield-a: {submit_result}")
+
+    result = poll_until_done(status_url, headers)
+    images = result.get("images") or []
+    if not images or "url" not in images[0]:
+        raise RuntimeError(f"Higgsfield nije vratio sliku: {result}")
+    return images[0]["url"]
+
+
+def generate_portrait_with_fallback(prompt_pool):
+    last_error = None
+    for attempt in range(2):
+        prompt = random.choice(prompt_pool)
+        try:
+            return generate_higgsfield_portrait(prompt)
+        except RuntimeError as e:
+            last_error = e
+            log(f"Pokušaj generisanja nije uspeo ({e}), probam ponovo sa drugim promptom...")
+    raise RuntimeError(f"Higgsfield generisanje nije uspelo posle 2 pokušaja: {last_error}")
+
+
+def pick_profile():
+    with open(PROFILES_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-    story = random.choice(data["stories"])
-    return random.choice(story["slides"])
-
-
-def pick_photo_url(category, api_key):
-    query_pool = PEXELS_QUERY_POOLS.get(category, PEXELS_QUERY_POOLS["relatable"])
-    query = random.choice(query_pool)
-    page = random.randint(1, 3)
-    encoded_query = urllib.parse.quote(query)
-    url = (
-        f"{PEXELS_SEARCH_URL}?query={encoded_query}"
-        f"&per_page=15&page={page}&orientation=portrait"
-    )
-    log(f"Tražim fotografiju na Pexels-u: '{query}' (strana {page})")
-    data = http_get_json_with_retry(url, headers={"Authorization": api_key})
-
-    photos = [p for p in data.get("photos", []) if p.get("src", {}).get("large2x") or p.get("src", {}).get("original")]
-    if not photos:
-        log("Nema rezultata za taj upit, probam rezervni upit...")
-        fallback_url = (
-            f"{PEXELS_SEARCH_URL}?query=european+couple+silhouette+romantic"
-            f"&per_page=15&page=1&orientation=portrait"
-        )
-        data = http_get_json_with_retry(fallback_url, headers={"Authorization": api_key})
-        photos = [p for p in data.get("photos", []) if p.get("src", {}).get("large2x") or p.get("src", {}).get("original")]
-        if not photos:
-            raise RuntimeError("Pexels nije vratio nijednu upotrebljivu fotografiju.")
-
-    photo = random.choice(photos)
-    return photo["src"].get("large2x") or photo["src"]["original"]
+    gender = random.choice(["male", "female"])
+    name = random.choice(data["names"][gender])
+    age = random.randint(MIN_AGE, MAX_AGE)
+    hook = random.choice(data["hooks"][gender])
+    return {
+        "gender": gender,
+        "name": name,
+        "age": age,
+        "hook": hook,
+        "prompt_pool": HIGGSFIELD_PROMPTS[gender],
+    }
 
 
 def crop_to_fill(img, target_w, target_h):
@@ -284,43 +314,50 @@ def draw_accent_line(draw, line, font, y, canvas_width):
     draw.text((x, y), line, font=font, fill=ACCENT_COLOR)
 
 
-def add_story_text(image_bytes, text):
+def add_profile_text(image_bytes, profile):
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = crop_to_fill(img, TARGET_WIDTH, TARGET_HEIGHT)
     width, height = img.size
 
-    # Tamnija pozadina - lagani sloj preko cele slike + jača zona iza teksta
     img = img.convert("RGBA")
     dark_overlay = Image.new("RGBA", img.size, (0, 0, 0, 100))
     img = Image.alpha_composite(img, dark_overlay)
     draw = ImageDraw.Draw(img, "RGBA")
 
     try:
-        hook_font = ImageFont.truetype(FONT_PATH, int(width * 0.075))
+        name_font = ImageFont.truetype(FONT_PATH, int(width * 0.09))
+        hook_font = ImageFont.truetype(FONT_PATH, int(width * 0.065))
         cta_font = ImageFont.truetype(FONT_PATH, int(width * 0.042))
     except OSError:
         log("UPOZORENJE: DejaVu font nije nađen, koristim default font.")
+        name_font = ImageFont.load_default()
         hook_font = ImageFont.load_default()
         cta_font = ImageFont.load_default()
 
-    text_upper = text.upper()
+    name_line = f"{profile['name'].upper()}, {profile['age']}"
+    hook_upper = profile["hook"].upper()
     max_width = int(width * 0.85)
-    lines = wrap_text(draw, text_upper, hook_font, max_width)
+    hook_lines = wrap_text(draw, hook_upper, hook_font, max_width)
 
+    name_line_height = int(name_font.size * 1.15) if hasattr(name_font, "size") else 28
     hook_line_height = int(hook_font.size * 1.15) if hasattr(hook_font, "size") else 24
     cta_line_height = int(cta_font.size * 1.3) if hasattr(cta_font, "size") else 20
     gap = int(height * 0.02)
 
-    total_height = hook_line_height * len(lines) + gap + cta_line_height
+    total_text_height = (
+        name_line_height + gap + hook_line_height * len(hook_lines) + gap + cta_line_height
+    )
 
     # Ostavljamo prazan prostor pri dnu (Instagram Story kontrole/reply polje)
     bottom_margin = int(height * 0.16)
     band_bottom = height - bottom_margin
-    band_top = band_bottom - total_height - int(height * 0.05)
+    band_top = band_bottom - total_text_height - int(height * 0.05)
     draw.rectangle([(0, band_top), (width, band_bottom)], fill=(0, 0, 0, 175))
 
-    y = band_bottom - total_height - int(height * 0.02)
-    for line in lines:
+    y = band_bottom - total_text_height - int(height * 0.02)
+    draw_accent_line(draw, name_line, name_font, y, width)
+    y += name_line_height + gap
+    for line in hook_lines:
         draw_highlighted_line(draw, line, hook_font, y, width)
         y += hook_line_height
 
@@ -357,42 +394,51 @@ def upload_to_cloudinary(image_bytes):
     content_type = f"multipart/form-data; boundary={boundary}"
 
     log("Otpremam sliku na Cloudinary...")
-    data = http_post_with_retry(url, body, content_type)
-    if "secure_url" not in data:
-        raise RuntimeError(f"Neočekivan odgovor od Cloudinary-ja: {data}")
-    return data["secure_url"]
+    last_error = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            req = urllib.request.Request(url, data=body, method="POST")
+            req.add_header("Content-Type", content_type)
+            with urllib.request.urlopen(req, timeout=60) as response:
+                result = json.loads(response.read().decode("utf-8"))
+                if "secure_url" not in result:
+                    raise RuntimeError(f"Neočekivan odgovor od Cloudinary-ja: {result}")
+                return result["secure_url"]
+        except urllib.error.HTTPError as e:
+            body_text = e.read().decode("utf-8", errors="replace")
+            if 400 <= e.code < 500:
+                log(f"TRAJNA GREŠKA ({e.code}), odustajem. Odgovor: {body_text}")
+                raise RuntimeError(f"Trajna greška {e.code}: {body_text}") from e
+            last_error = RuntimeError(f"HTTP {e.code}: {body_text}")
+            log(f"Privremena greška (pokušaj {attempt}/{MAX_RETRIES}): {last_error}")
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last_error = e
+            log(f"Mrežna greška (pokušaj {attempt}/{MAX_RETRIES}): {e}")
+
+        if attempt < MAX_RETRIES:
+            delay = RETRY_DELAYS[attempt - 1]
+            log(f"Čekam {delay}s pre sledećeg pokušaja...")
+            time.sleep(delay)
+
+    raise RuntimeError(f"Svi pokušaji neuspešni. Poslednja greška: {last_error}")
 
 
 def main():
-    if len(sys.argv) < 2:
-        log("GREŠKA: navedi kategoriju kao argument (cta, humor_citati, relatable).")
-        sys.exit(1)
+    profile = pick_profile()
+    log(f"Profil: {profile['name']}, {profile['age']} godina ({profile['gender']})")
 
-    category = sys.argv[1]
-
-    api_key = os.environ.get("PEXELS_API_KEY", "").strip()
-    if not api_key:
-        log("GREŠKA: nedostaje PEXELS_API_KEY.")
-        sys.exit(1)
-
-    hook = pick_story_text()
-
-    photo_url = pick_photo_url(category, api_key)
-    log(f"Preuzimam fotografiju: {photo_url}")
-    base_image = http_get_bytes_with_retry(photo_url)
-    final_image = add_story_text(base_image, hook)
+    portrait_url = generate_portrait_with_fallback(profile["prompt_pool"])
+    log(f"Preuzimam portret: {portrait_url}")
+    base_image = http_get_bytes_with_retry(portrait_url)
+    final_image = add_profile_text(base_image, profile)
     image_url = upload_to_cloudinary(final_image)
 
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(
-            {"category": category, "hook": hook, "image_url": image_url},
+            {"category": profile["gender"], "hook": profile["hook"], "image_url": image_url},
             f,
             ensure_ascii=False,
             indent=2,
         )
-    log(f"Gotovo. Story slika: {image_url}")
-
-
-if __name__ == "__main__":
-    main()
+    log(f"Gotovo.
