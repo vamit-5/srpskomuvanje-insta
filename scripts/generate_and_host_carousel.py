@@ -48,6 +48,7 @@ import uuid
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 import gdrive_helper
+import hook_generator
 
 CONTENT_TYPE = "carousels"
 CONFESSIONS_FILE = "content/confessions.json"
@@ -69,6 +70,12 @@ REPEAT_SAME_IMAGE_CHANCE = 0.5  # samo za "obične slike"
 # (statistika o Srbiji) umesto od "Priznajem..." izjava. Bira se JEDNOM za
 # ceo carousel - NIKAD se ne mešaju u istoj objavi.
 HOOK_CHANCE = 0.5
+
+# Kad je carousel u "hook" stilu - koliko često se za SVAKI pojedinačni
+# slajd koristi NOVOGENERISAN hook (hook_generator.py, hiljade mogućih
+# varijanti sa nasumičnim brojevima) umesto jednog od ručno pisanih
+# hookova iz confessions.json. Glavni mehanizam protiv ponavljanja.
+GENERATED_HOOK_CHANCE = 0.65
 
 ACCENT_COLOR = (224, 102, 255, 255)  # lila-roza, za istaknute reči
 
@@ -179,18 +186,41 @@ def _fill_from_pool(source, needed):
     return chosen[:needed]
 
 
+def _pick_hooks_for_slides(hooks, needed):
+    """Bira 'needed' hook-parova za slajdove carousela. Za SVAKI slajd
+    nezavisno, sa GENERATED_HOOK_CHANCE verovatnoćom generiše SVEŽ hook
+    (hook_generator.py - hiljade mogućih varijanti, broj je svaki put
+    drugačiji), a inače uzima jedan od ručno pisanih hookova iz
+    confessions.json (bez ponavljanja dok se ne potroši ceo pool, pa se
+    onda ponovo meša). Ovo garantuje da carousel od više slajdova skoro
+    nikad ne pokaže dva identična hook teksta."""
+    static_pool = list(hooks)
+    random.shuffle(static_pool)
+    chosen = []
+    for _ in range(needed):
+        if random.random() < GENERATED_HOOK_CHANCE:
+            chosen.append(hook_generator.generate_hook())
+        else:
+            if not static_pool:
+                static_pool = list(hooks)
+                random.shuffle(static_pool)
+            chosen.append(static_pool.pop())
+    return chosen
+
+
 def pick_confessions_and_caption(k):
     """Bira k tekstova za slajdove (poslednji je UVEK poseban 'pridruži se
     besplatno' poziv) PLUS caption za ceo carousel.
 
-    VAŽNO: 'Priznajem...' izjave i novi 'hook' tekstovi (statistika o
-    Srbiji) se NIKAD ne mešaju u ISTOM carousel-u - to su dva odvojena
-    "stila" i mešanje im kvari utisak. Zato se OVDE bira, JEDNOM za ceo
-    carousel, da li će SVI obični slajdovi biti 'Priznajem...' izjave, ili
-    će SVI biti 'hook' statistike (sa HOOK_CHANCE verovatnoćom bira se
-    hook stil). Caption celog carousela je uvek vezan za ISTI stil koji je
-    iskorišćen na slajdovima (kod hook stila - caption jednog od
-    iskorišćenih hookova; kod 'Priznajem' stila - nezavisan CTA opis)."""
+    VAŽNO: 'Priznajem...' izjave i 'hook' tekstovi (statistika o Srbiji,
+    ručno pisani ILI novogenerisani preko hook_generator.py) se NIKAD ne
+    mešaju u ISTOM carousel-u - to su dva odvojena "stila" i mešanje im
+    kvari utisak. Zato se OVDE bira, JEDNOM za ceo carousel, da li će SVI
+    obični slajdovi biti 'Priznajem...' izjave, ili će SVI biti 'hook'
+    statistike (sa HOOK_CHANCE verovatnoćom bira se hook stil). Caption
+    celog carousela je uvek vezan za ISTI stil koji je iskorišćen na
+    slajdovima (kod hook stila - caption jednog od iskorišćenih hookova;
+    kod 'Priznajem' stila - nezavisan CTA opis)."""
     with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
     pool = list(data["confessions"])
@@ -200,7 +230,7 @@ def pick_confessions_and_caption(k):
     regular_needed = k - 1
 
     if hooks and regular_needed >= 1 and random.random() < HOOK_CHANCE:
-        chosen_hooks = _fill_from_pool(hooks, regular_needed)
+        chosen_hooks = _pick_hooks_for_slides(hooks, regular_needed)
         regular = [h["overlay"] for h in chosen_hooks]
         caption = random.choice(chosen_hooks)["caption"]
     else:
