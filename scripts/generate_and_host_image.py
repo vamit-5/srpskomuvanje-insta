@@ -42,6 +42,7 @@ import uuid
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 import gdrive_helper
+import hook_generator
 
 CONTENT_TYPE = "feed"
 CONFESSIONS_FILE = "content/confessions.json"
@@ -62,6 +63,13 @@ ACCENT_COLOR = (224, 102, 255, 255)  # lila-roza, za istaknute reči
 # opis (caption) MEĐUSOBNO POVEZANI (prva rečenica je na slici, ostatak
 # ide u opis), dok kod stare kombinacije to biramo nezavisno.
 HOOK_CHANCE = 0.5
+
+# Kad se bira "hook" stil - koliko često koristimo NOVOGENERISAN hook
+# (hook_generator.py, hiljade mogućih varijanti sa nasumičnim brojevima)
+# umesto jednog od ručno pisanih hookova iz confessions.json. Ovo je
+# GLAVNI mehanizam protiv ponavljanja/utiska spama - praktično nikad se
+# ne ponavlja isti tekst.
+GENERATED_HOOK_CHANCE = 0.65
 
 HIGHLIGHT_WORDS = {
     "priznajem",
@@ -107,17 +115,23 @@ def pick_cta_caption():
 
 def pick_overlay_and_caption():
     """Bira tekst za sliku i tekst za opis (caption) za 'običnu sliku'.
-    Sa HOOK_CHANCE verovatnoćom bira novi 'hook' par iz 'hooks' liste
-    (statistika o Srbiji) - tu su tekst na slici i opis MEĐUSOBNO
-    POVEZANI (prva rečenica ide na sliku, ostatak ide u opis). Inače
-    koristi staru kombinaciju: nasumična 'confession' rečenica na slici
-    + nezavisan CTA opis."""
+    Sa HOOK_CHANCE verovatnoćom bira "hook" stil (statistika o Srbiji) -
+    tu su tekst na slici i opis MEĐUSOBNO POVEZANI (prva rečenica ide na
+    sliku, ostatak ide u opis). Unutar "hook" stila, sa
+    GENERATED_HOOK_CHANCE verovatnoćom generiše SVEŽ hook preko
+    hook_generator.py (hiljade mogućih varijanti - broj je svaki put
+    drugačiji), a inače koristi jedan od ručno pisanih hookova iz
+    confessions.json. Van "hook" stila koristi staru kombinaciju:
+    nasumična 'confession' rečenica na slici + nezavisan CTA opis."""
     with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     hooks = data.get("hooks", [])
     if hooks and random.random() < HOOK_CHANCE:
-        hook = random.choice(hooks)
+        if random.random() < GENERATED_HOOK_CHANCE:
+            hook = hook_generator.generate_hook()
+        else:
+            hook = random.choice(hooks)
         return hook["overlay"], hook["caption"]
 
     overlay = random.choice(data["confessions"])
