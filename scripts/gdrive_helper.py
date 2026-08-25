@@ -72,10 +72,18 @@ def get_drive_service():
     return service
 
 
-def find_folder(service, name, parent_id=None):
+def find_folder(service, name, parent_id=None, prefix=False):
     """Traži folder po imenu (neosetljivo na velika/mala slova) unutar
     parent_id (ili globalno ako parent_id nije zadat). Vraća ID prvog
-    poklapanja ili None."""
+    poklapanja ili None.
+
+    Ako je prefix=True, folder se smatra poklapanjem i kad njegovo ime
+    SAMO POČINJE traženim imenom (npr. traženo "kartice" poklapa se sa
+    stvarnim folderom "Kartice Srpskomuvanje"). Ovo je uvedeno jer je
+    dijagnostika pokazala da folder na Drive-u NIJE nazvan tačno
+    "kartice", nego "Kartice Srpskomuvanje" - sa tačnim poklapanjem
+    (prefix=False) taj folder se NIKAD nije pronalazio, pa se kartice
+    nikad nisu ni birale za objavu."""
     query_parts = ["mimeType = 'application/vnd.google-apps.folder'", "trashed = false"]
     if parent_id:
         query_parts.append(f"'{parent_id}' in parents")
@@ -91,7 +99,8 @@ def find_folder(service, name, parent_id=None):
             pageToken=page_token,
         ).execute()
         for f in response.get("files", []):
-            if f["name"].strip().lower() == target:
+            actual = f["name"].strip().lower()
+            if actual == target or (prefix and actual.startswith(target)):
                 return f["id"]
         page_token = response.get("nextPageToken")
         if not page_token:
@@ -186,7 +195,7 @@ def _get_subtype_folder(service, root_id, content_type, subtype):
             f"Nije nađen folder '{content_type}' unutar '{ROOT_FOLDER_NAME}'. "
             f"Podfolderi koji TU stvarno postoje: {siblings or '(nijedan)'}"
         )
-    subtype_folder_id = find_folder(service, subtype, content_folder_id)
+    subtype_folder_id = find_folder(service, subtype, content_folder_id, prefix=True)
     if not subtype_folder_id:
         siblings = _list_subfolder_names(service, content_folder_id)
         raise RuntimeError(
