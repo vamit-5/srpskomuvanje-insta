@@ -66,10 +66,19 @@ HOOK_CHANCE = 0.5
 
 # Kad se bira "hook" stil - koliko često koristimo NOVOGENERISAN hook
 # (hook_generator.py, hiljade mogućih varijanti sa nasumičnim brojevima)
-# umesto jednog od ručno pisanih hookova iz confessions.json. Ovo je
-# GLAVNI mehanizam protiv ponavljanja/utiska spama - praktično nikad se
-# ne ponavlja isti tekst.
-GENERATED_HOOK_CHANCE = 0.65
+# umesto jednog od ručno pisanih ILI "šok" hookova. Ovo je GLAVNI
+# mehanizam protiv ponavljanja/utiska spama - praktično nikad se ne
+# ponavlja isti tekst.
+GENERATED_HOOK_CHANCE = 0.40
+
+# Kad se bira "hook" stil - koliko često (od preostalog dela, POSLE
+# GENERATED_HOOK_CHANCE) koristimo NOVI "šok" hook iz confessions.json
+# ("shock_hooks" - brutalne, kontroverzne situacije/priče o Srbima i
+# Srpkinjama: prevare, raskidi, otkazane veridbe, porodične drame - sve
+# osmišljeno da izazove diskusiju i komentare). Ostatak ide na "stare"
+# ručno pisane statističke hookove ("hooks"). Sve tri vrste su i dalje
+# ISTI "stil" (nikad se ne mešaju sa "Priznajem..." izjavama).
+SHOCK_HOOK_CHANCE = 0.35
 
 HIGHLIGHT_WORDS = {
     "priznajem",
@@ -115,21 +124,31 @@ def pick_cta_caption():
 
 def pick_overlay_and_caption():
     """Bira tekst za sliku i tekst za opis (caption) za 'običnu sliku'.
-    Sa HOOK_CHANCE verovatnoćom bira "hook" stil (statistika o Srbiji) -
-    tu su tekst na slici i opis MEĐUSOBNO POVEZANI (prva rečenica ide na
-    sliku, ostatak ide u opis). Unutar "hook" stila, sa
-    GENERATED_HOOK_CHANCE verovatnoćom generiše SVEŽ hook preko
-    hook_generator.py (hiljade mogućih varijanti - broj je svaki put
-    drugačiji), a inače koristi jedan od ručno pisanih hookova iz
-    confessions.json. Van "hook" stila koristi staru kombinaciju:
-    nasumična 'confession' rečenica na slici + nezavisan CTA opis."""
+    Sa HOOK_CHANCE verovatnoćom bira "hook" stil - tu su tekst na slici i
+    opis MEĐUSOBNO POVEZANI (prva rečenica ide na sliku, ostatak ide u
+    opis). Unutar "hook" stila bira se JEDNA od TRI vrste (sve su i dalje
+    ISTI "stil", ne mešaju se sa "Priznajem..."):
+      1. GENERATED_HOOK_CHANCE - svež statistički hook generisan preko
+         hook_generator.py (hiljade mogućih varijanti, broj je svaki put
+         drugačiji).
+      2. SHOCK_HOOK_CHANCE - "šok" hook iz confessions.json
+         ("shock_hooks") - brutalna, kontroverzna situacija/priča o
+         Srbima i Srpkinjama, osmišljena da izazove diskusiju.
+      3. ostatak - jedan od "starih" ručno pisanih statističkih hookova
+         iz confessions.json ("hooks").
+    Van "hook" stila koristi se stara kombinacija: nasumična 'confession'
+    rečenica na slici + nezavisan CTA opis."""
     with open(CONFESSIONS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     hooks = data.get("hooks", [])
+    shock_hooks = data.get("shock_hooks", [])
     if hooks and random.random() < HOOK_CHANCE:
-        if random.random() < GENERATED_HOOK_CHANCE:
+        r = random.random()
+        if r < GENERATED_HOOK_CHANCE:
             hook = hook_generator.generate_hook()
+        elif shock_hooks and r < GENERATED_HOOK_CHANCE + SHOCK_HOOK_CHANCE:
+            hook = random.choice(shock_hooks)
         else:
             hook = random.choice(hooks)
         return hook["overlay"], hook["caption"]
