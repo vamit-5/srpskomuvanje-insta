@@ -315,5 +315,107 @@
       "overlay": "212 Srba je ovog meseca pronašlo nekoga kome su poslali prvo „Ćao“.",
       "caption": "Neko je čekao. Neko je skupio hrabrost. Neko je poslao poruku. I odatle je krenulo. ❤️ SrpskoMuvanje — nemoj da ostaneš na „mogao sam“."
     }
+  ],
+  "shock_hooks": [
+    {
+      "overlay": "Srpkinja iz Novog Sada otkazala veridbu dan pred venčanje - saznala je da verenik i dalje piše bivšoj svake noći.",
+      "caption": "Sala zakupljena, haljina skrojena, gosti pozvani - a ona je sve otkazala za 24 sata. Da li bi ti tako reagovao/la, ili bi mu dao/la još jednu šansu? Piši u komentar. A ako tražiš nekog ko neće imati 'bivšu u rezervi' - SrpskoMuvanje. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Srbin iz Beograda ostavio devojku posle 5 godina veze - nedelju dana kasnije ju je zaprosio njen najbolji drug.",
+      "caption": "Cela ekipa je znala pre nje. Da li je ovo izdaja ili samo život? Ti bi mu/joj oprostio/la? SrpskoMuvanje - bar ovde znaš sa kim pričaš. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Devojka iz Niša birala između momka koji je voli i onog koji joj plaća stanarinu. Izabrala je stanarinu.",
+      "caption": "'Ljubav ne plaća račune', rekla je drugarici. Da li je ovo pametno ili tužno? Podeli mišljenje u komentarima. SrpskoMuvanje - upoznaj nekog ko te bira zbog tebe, ne zbog para. Besplatno."
+    },
+    {
+      "overlay": "Mladoženja saznao na samom venčanju da će mu bivša devojka sedeti za prvim stolom - pozvala ju je njegova majka.",
+      "caption": "Svadba se nastavila. On se nasmešio. Ali svi su primetili da nešto nije u redu. Da li bi ti ostao/la miran/mirna u toj situaciji? SrpskoMuvanje - bez drame, bez bivših za stolom. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Srpkinja iz Kragujevca saznala da momak sa kojim se dopisuje mesec dana ima ženu i dete u drugom gradu.",
+      "caption": "Sve je delovalo savršeno - dok nije otkrila istinu iz jedne slučajne poruke. Koliko puta ti se ovo desilo? SrpskoMuvanje - profil se proverava, ne kriješ se iza lažne priče. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Ona je izabrala fakultet u inostranstvu. On je ostao u Srbiji. Godinu dana kasnije - oboje su okrivljeni za raskid od cele porodice.",
+      "caption": "Da li je razdaljina zaista kriva, ili je to bio samo izgovor? Piši šta misliš. SrpskoMuvanje - upoznaj nekog ko je tu, blizu tebe, ne 1000 km daleko. Besplatno."
+    },
+    {
+      "overlay": "Devojka prevarila momka sa njegovim najboljim drugom - on je saznao iz story-ja na Instagramu.",
+      "caption": "Nije mu rekla lično. Saznao je kao i svi ostali - skrolujući. Da li bi ti ikad oprostio/la ovakvu izdaju? SrpskoMuvanje - ovde bar znaš da nisi jedina opcija nekome. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Razvedena majka iz Beograda u vezi sa momkom 12 godina mlađim - komšije pričaju, porodica ćuti, a ona kaže da je najsrećnija do sad.",
+      "caption": "Da li je ljubav uopšte pitanje godina, ili društvo uvek nađe razlog da osuđuje? Reci svoje mišljenje. SrpskoMuvanje - tu je za svakog, bez obzira na brojeve. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Verenik otkazao veridbu na aerodromu - devojka je već bila spakovana za zajednički život u Beču.",
+      "caption": "Kofer je ostao. Karta je propala. A on se nikad nije pojavio na gejtu. Da li postoji opravdanje za ovako nešto? SrpskoMuvanje - upoznaj nekog ko neće nestati bez reči. Besplatno."
+    },
+    {
+      "overlay": "Ona mu je oprostila prvu prevaru. Drugu. Treću. Prijatelji kažu da mu više nikad neće verovati - ona kaže da ga i dalje voli.",
+      "caption": "Da li je ovo ljubav ili navika koju je teško prekinuti? Piši šta misliš dole. SrpskoMuvanje - zaslužuješ nekog kome nećeš morati da opraštaš iznova. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Momak iz Subotice otkrio da devojka paralelno priča sa četvoricom na aplikacijama za upoznavanje - uključujući i njegovog kolegu s posla.",
+      "caption": "Saznao je slučajno, na zajedničkom roštilju. Neprijatnije večeri odavno nije bilo. Da li bi ti nastavio/la vezu posle ovoga? SrpskoMuvanje - jedan profil, jasne namere. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Ona je birala između momka iz svog kraja i stranca koji joj obećava 'bolji život' - porodica podeljena, komšiluk raspravlja.",
+      "caption": "Novac ili osećaj sigurnosti kod kuće? Šta bi ti izabrao/la na njenom mestu? SrpskoMuvanje - upoznaj nekog blizu, bez obećanja izdaleka. Besplatno."
+    },
+    {
+      "overlay": "Mladić otkazao venčanje na probi haljine - rekao je da 'nešto nije osećao' kad ju je video u belom.",
+      "caption": "Ona i dalje ne zna pravi razlog. On se ne javlja. Cela porodica čeka objašnjenje koje možda nikad neće doći. Da li mu je bilo pravo da uradi ovako? SrpskoMuvanje - upoznaj nekog ko zna šta hoće PRE nego što stigneš do haljine. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Bivši dečko se pojavio na njenom venčanju kao 'iznenađenje' gosta - mladoženja i dalje ne zna ko ga je pozvao.",
+      "caption": "Muzika je stala na sekund kad je ušao. Svi su pogledali nju. Da li bi ti to ućutao/la, ili napravio/la scenu na licu mesta? SrpskoMuvanje - bez nezvanih gostiju iz prošlosti. Besplatno."
+    },
+    {
+      "overlay": "Devojka priznala majci da je raskinula veridbu jer je momak 'previše dobar' i 'nije joj bilo interesantno'.",
+      "caption": "Cela porodica je besna. Ona kaže da zna šta hoće. Da li je ovo hrabrost ili greška koju će žaliti? Piši mišljenje. SrpskoMuvanje - tu su i ljudi koji nisu 'previše dobri' za tebe. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "On je čekao da je zaprosi 6 godina. Ona je rekla 'ne' - i posle mesec dana se udala za nekog koga poznaje 3 nedelje.",
+      "caption": "Šest godina čekanja protiv tri nedelje strasti. Ko je tu napravio grešku - on ili ona? SrpskoMuvanje - ne čekaj godinama, upoznaj odmah nekog ko je siguran u ono što hoće. Besplatno."
+    },
+    {
+      "overlay": "Devojka ostavila momka jer 'nije imao ambicija' - godinu dana kasnije on je otvorio sopstvenu firmu, a ona mu piše ponovo.",
+      "caption": "Kažu da se sve vraća. On kaže da je kasno. Da li bi ti dao/la drugu šansu nekom ko te je ostavio kad si bio/la 'na dnu'? SrpskoMuvanje - upoznaj nekog ko veruje u tebe od početka. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Roditelji zabranili ćerki da se uda za momka 'jer nije iz dobre kuće' - ona pobegla sa njim u drugi grad, bez ičije dozvole.",
+      "caption": "Dve godine se ne javljaju porodici. Kaže da je srećnija nego ikad. Da li ljubav treba da ima nečije odobrenje? SrpskoMuvanje - biraj sam/a, niko drugi ne treba da odlučuje umesto tebe. Besplatno."
+    },
+    {
+      "overlay": "Ona ga je prevarila sa njegovim bratom od strica na porodičnoj proslavi - cela familija sad ne priča jedni s drugima.",
+      "caption": "Baba i deda više ne znaju kome da veruju za slavu. Da li postoji povratak posle ovakve izdaje u porodici? SrpskoMuvanje - upoznaj nekog van tvog kruga, da ne bi bilo neprijatno na slavi. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Momak saznao dan posle venčanja da mu je žena i dalje svaki dan u kontaktu sa bivšim iz srednje škole.",
+      "caption": "'Samo smo prijatelji', kaže ona. On ne veruje ni reč. Da li je ovo normalno u braku, ili crvena zastavica koja se ignoriše? SrpskoMuvanje - jasni profili, jasne namere, bez tajnih poruka. Besplatno."
+    },
+    {
+      "overlay": "Devojka odbila momka koji zarađuje duplo manje od nje - rekla je da 'ne može da poštuje muškarca koji zarađuje manje'.",
+      "caption": "Komentari su podeljeni - jedni je brane, drugi je zovu površnom. Ti na čijoj si strani? SrpskoMuvanje - upoznaj ljude koji cene karakter, ne samo platu. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Muž saznao da mu žena tajno šalje pare bivšem mužu 'da mu pomogne' - traži razvod posle 8 godina braka.",
+      "caption": "Ona kaže da je to normalno, on kaže da je to izdaja. Ko je u pravu? Piši dole šta misliš. SrpskoMuvanje - jasnoća od prvog dana, bez skrivenih tajni. Besplatno."
+    },
+    {
+      "overlay": "Ona ostavila momka na dan mature jer je 'bio previše ljubomoran' - deset godina kasnije priznala je da je to bila najveća greška u životu.",
+      "caption": "Sad su oboje u vezama sa drugima. Kaže da ga i dalje ponekad sanja. Da li postoji 'prava osoba u pogrešno vreme'? SrpskoMuvanje - možda je tvoja prava osoba baš sad tu, ne čekaj deset godina. Besplatno, link u bio-u."
+    },
+    {
+      "overlay": "Dva najbolja druga se posvađala zauvek zbog iste devojke - ona na kraju nije izabrala nijednog.",
+      "caption": "Prijateljstvo od 15 godina uništeno za tri meseca dopisivanja. Da li devojka ikad vredi gubitka najboljeg druga? SrpskoMuvanje - upoznaj nekog van svog društva, bez rizika da izgubiš prijatelja. Besplatno."
+    },
+    {
+      "overlay": "Mladenci se posvađali na sopstvenom venčanju zbog plesa sa kumom - gosti snimali sve na telefone, snimak kruži internetom.",
+      "caption": "Prvi ples kao mladenci pretvorio se u raspravu pred 200 ljudi. Da li je ljubomora normalna na venčanju, ili je ovo bio znak za uzbunu? SrpskoMuvanje - upoznaj nekog s kim nećeš morati da se svađaš pred svima. Besplatno, link u bio-u."
+    }
   ]
 }
