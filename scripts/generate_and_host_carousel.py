@@ -24,9 +24,12 @@ generate_and_host_carousel.py
 3c. POSLEDNJI slajd "običnih slika" carousela je UVEK poseban - poziva
     gledaoca da se besplatno pridruži prvom srpskom dating app-u, umesto
     obične "Priznajem..." izjave.
-3d. VAŽNO: "Priznajem..." izjave i novi "hook" tekstovi (statistika o
-    Srbiji) se NIKAD ne mešaju u ISTOM carousel-u. Ceo carousel je ili
-    SAV od "Priznajem..." izjava, ili SAV od "hook" statistika.
+3d. VAŽNO: "Priznajem..." izjave i "hook" tekstovi (statistika o Srbiji,
+    ručno pisani ILI novogenerisani, PLUS novi "šok" hookovi - brutalne,
+    kontroverzne situacije/priče o Srbima i Srpkinjama koje izazivaju
+    diskusiju) se NIKAD ne mešaju u ISTOM carousel-u. Ceo carousel je ili
+    SAV od "Priznajem..." izjava, ili SAV od "hook stila" (koji sam po
+    sebi slobodno meša statistiku, generisane hookove i "šok" hookove).
 4. Otpremi sve slike na Cloudinary.
 5. Bira preuveličan/hype CTA tekst (NIKAD u prvom licu) za caption celog
    carousela.
@@ -73,9 +76,17 @@ HOOK_CHANCE = 0.5
 
 # Kad je carousel u "hook" stilu - koliko često se za SVAKI pojedinačni
 # slajd koristi NOVOGENERISAN hook (hook_generator.py, hiljade mogućih
-# varijanti sa nasumičnim brojevima) umesto jednog od ručno pisanih
-# hookova iz confessions.json. Glavni mehanizam protiv ponavljanja.
-GENERATED_HOOK_CHANCE = 0.65
+# varijanti sa nasumičnim brojevima) umesto jednog od ručno pisanih ILI
+# "šok" hookova. Glavni mehanizam protiv ponavljanja.
+GENERATED_HOOK_CHANCE = 0.40
+
+# Kad je carousel u "hook" stilu - koliko često (od preostalog dela,
+# POSLE GENERATED_HOOK_CHANCE) se za SVAKI slajd koristi NOVI "šok" hook
+# iz confessions.json ("shock_hooks" - brutalne, kontroverzne
+# situacije/priče o Srbima i Srpkinjama, osmišljene da izazovu diskusiju
+# u komentarima). Ostatak ide na "stare" ručno pisane statističke hookove
+# ("hooks"). Sve tri vrste su i dalje ISTI "stil" unutar carousela.
+SHOCK_HOOK_CHANCE = 0.35
 
 ACCENT_COLOR = (224, 102, 255, 255)  # lila-roza, za istaknute reči
 
@@ -186,20 +197,33 @@ def _fill_from_pool(source, needed):
     return chosen[:needed]
 
 
-def _pick_hooks_for_slides(hooks, needed):
+def _pick_hooks_for_slides(hooks, shock_hooks, needed):
     """Bira 'needed' hook-parova za slajdove carousela. Za SVAKI slajd
-    nezavisno, sa GENERATED_HOOK_CHANCE verovatnoćom generiše SVEŽ hook
-    (hook_generator.py - hiljade mogućih varijanti, broj je svaki put
-    drugačiji), a inače uzima jedan od ručno pisanih hookova iz
-    confessions.json (bez ponavljanja dok se ne potroši ceo pool, pa se
-    onda ponovo meša). Ovo garantuje da carousel od više slajdova skoro
-    nikad ne pokaže dva identična hook teksta."""
+    nezavisno bira se JEDNA od TRI vrste:
+      1. GENERATED_HOOK_CHANCE - svež statistički hook preko
+         hook_generator.py (hiljade mogućih varijanti, broj je svaki put
+         drugačiji).
+      2. SHOCK_HOOK_CHANCE - "šok" hook iz 'shock_hooks' (bez ponavljanja
+         dok se ne potroši ceo pool, pa se ponovo meša).
+      3. ostatak - jedan od "starih" ručno pisanih hookova iz 'hooks'
+         (isto bez ponavljanja dok se ne potroši pool).
+    Ovo garantuje da carousel od više slajdova skoro nikad ne pokaže dva
+    identična hook teksta, a istovremeno meša sve tri vrste slobodno
+    (to je i dalje SAV isti "hook stil", ne meša se sa "Priznajem...")."""
     static_pool = list(hooks)
     random.shuffle(static_pool)
+    shock_pool = list(shock_hooks)
+    random.shuffle(shock_pool)
     chosen = []
     for _ in range(needed):
-        if random.random() < GENERATED_HOOK_CHANCE:
+        r = random.random()
+        if r < GENERATED_HOOK_CHANCE:
             chosen.append(hook_generator.generate_hook())
+        elif shock_hooks and r < GENERATED_HOOK_CHANCE + SHOCK_HOOK_CHANCE:
+            if not shock_pool:
+                shock_pool = list(shock_hooks)
+                random.shuffle(shock_pool)
+            chosen.append(shock_pool.pop())
         else:
             if not static_pool:
                 static_pool = list(hooks)
@@ -226,11 +250,12 @@ def pick_confessions_and_caption(k):
     pool = list(data["confessions"])
     closing_pool = list(data["closing_slide_texts"])
     hooks = data.get("hooks", [])
+    shock_hooks = data.get("shock_hooks", [])
 
     regular_needed = k - 1
 
     if hooks and regular_needed >= 1 and random.random() < HOOK_CHANCE:
-        chosen_hooks = _pick_hooks_for_slides(hooks, regular_needed)
+        chosen_hooks = _pick_hooks_for_slides(hooks, shock_hooks, regular_needed)
         regular = [h["overlay"] for h in chosen_hooks]
         caption = random.choice(chosen_hooks)["caption"]
     else:
